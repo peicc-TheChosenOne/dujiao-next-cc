@@ -9,6 +9,15 @@ db/
 uploads/
 logs/
 config.yml
+deploy/config/
+deploy/secrets/
+deploy/data/
+deploy/backups/
+deploy/tls/
+deploy/.env
+*.pem
+*.key
+*.ppk
 *.db
 *.log
 
