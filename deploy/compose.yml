@@ -1,0 +1,124 @@
+name: dujiao-next
+
+services:
+  app:
+    image: ${APP_IMAGE:-dujiao-next:local}
+    container_name: dujiao-next
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Shanghai
+    ports:
+      - 127.0.0.1:8080:8080
+    volumes:
+      - ./config/config.yml:/app/config.yml:ro
+      - ./data/uploads:/app/uploads
+      - ./data/logs:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, wget, -qO-, http://127.0.0.1:8080/health]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+    mem_limit: 1g
+    cpus: 1.5
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+    networks:
+      - dujiao-net
+
+  postgres:
+    image: ${POSTGRES_IMAGE:-postgres:17-alpine}
+    container_name: postgres
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Shanghai
+      POSTGRES_USER: postgres
+      POSTGRES_DB: dujiao_next
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256 --data-checksums
+    command:
+      - postgres
+      - -c
+      - max_connections=50
+      - -c
+      - shared_buffers=128MB
+      - -c
+      - effective_cache_size=512MB
+      - -c
+      - work_mem=4MB
+      - -c
+      - maintenance_work_mem=64MB
+      - -c
+      - timezone=Asia/Shanghai
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+      - ./postgres-init.sh:/docker-entrypoint-initdb.d/10-app-user.sh:ro
+    secrets:
+      - postgres_password
+      - app_db_password
+    healthcheck:
+      test: [CMD, pg_isready, -U, postgres, -d, dujiao_next]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    mem_limit: 768m
+    shm_size: 128m
+    cpus: 1.0
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+    networks:
+      - dujiao-net
+
+  redis:
+    image: ${REDIS_IMAGE:-redis:7.4-alpine}
+    container_name: redis
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Shanghai
+    command: [redis-server, /usr/local/etc/redis/redis.conf]
+    volumes:
+      - ./data/redis:/data
+      - ./redis.conf:/usr/local/etc/redis/redis.conf:ro
+      - ./config/redis-users.acl:/usr/local/etc/redis/users.acl:ro
+    secrets:
+      - redis_password
+    healthcheck:
+      test: [CMD-SHELL, 'REDISCLI_AUTH="$$(cat /run/secrets/redis_password)" redis-cli ping | grep -qx PONG']
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    mem_limit: 512m
+    cpus: 0.5
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+    networks:
+      - dujiao-net
+
+networks:
+  dujiao-net:
+    name: dujiao-next-network
+    driver: bridge
+
+secrets:
+  postgres_password:
+    file: ./secrets/postgres_password
+  app_db_password:
+    file: ./secrets/app_db_password
+  redis_password:
+    file: ./secrets/redis_password
