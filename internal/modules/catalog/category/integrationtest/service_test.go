@@ -82,6 +82,43 @@ func TestCategoryServiceCreateSupportsSecondLevelCategory(t *testing.T) {
 	}
 }
 
+func TestCategoryServiceCreateRestoresDeletedSlug(t *testing.T) {
+	svc, db := newCategoryServiceForTest(t)
+	original := createCategoryFixture(t, db, "ChatGPT", 0)
+	parent := createCategoryFixture(t, db, "ai", 0)
+	if err := svc.Delete(fmt.Sprintf("%d", original.ID)); err != nil {
+		t.Fatalf("delete category failed: %v", err)
+	}
+
+	restored, err := svc.Create(categoryapp.UpsertInput{
+		ParentID:  parent.ID,
+		Slug:      original.Slug,
+		NameJSON:  map[string]interface{}{"zh-CN": "ChatGPT 服务"},
+		Icon:      "/uploads/chatgpt.png",
+		SortOrder: 37,
+	})
+	if err != nil {
+		t.Fatalf("recreate deleted slug failed: %v", err)
+	}
+	if restored.ID != original.ID || !restored.CreatedAt.Equal(original.CreatedAt) {
+		t.Fatalf("restored category must preserve its identity and creation time: %+v", restored)
+	}
+	var saved categorydomain.Category
+	if err := db.First(&saved, original.ID).Error; err != nil {
+		t.Fatalf("read restored category failed: %v", err)
+	}
+	if saved.DeletedAt != nil || !saved.IsActive || saved.ParentID != parent.ID || saved.NameJSON["zh-CN"] != "ChatGPT 服务" || saved.Icon != "/uploads/chatgpt.png" || saved.SortOrder != 37 {
+		t.Fatalf("restored category did not save the requested fields: %+v", saved)
+	}
+	var count int64
+	if err := db.Model(&categorydomain.Category{}).Where("slug = ?", original.Slug).Count(&count).Error; err != nil || count != 1 {
+		t.Fatalf("expected one category for restored slug, got count=%d err=%v", count, err)
+	}
+	if _, err := svc.Create(categoryapp.UpsertInput{Slug: original.Slug}); err != categoryapp.ErrSlugExists {
+		t.Fatalf("active slug must still reject duplicates, got %v", err)
+	}
+}
+
 func TestCategoryServiceCreateRejectsMissingOrSecondLevelParent(t *testing.T) {
 	svc, db := newCategoryServiceForTest(t)
 	parent := createCategoryFixture(t, db, "games", 0)
