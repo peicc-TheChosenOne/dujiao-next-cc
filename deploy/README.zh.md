@@ -11,7 +11,8 @@
 | PostgreSQL | 17.11 | postgres | postgres:5432 |
 | Redis | 7.4.11 | redis | redis:6379 |
 
-服务都连接到 `dujiao-next-network`；应用端口仅发布到 `127.0.0.1:8080`，数据库和 Redis 不发布端口。
+服务都连接到 `dujiao-next-network`；应用端口仅发布到 `127.0.0.1:8080`。
+基础编排不发布数据库端口；可通过 `compose.public.yml` 启用下文的 TLS 客户端连接。
 宝塔 Docker 容器列表可以查看三个容器。
 服务器 `.env` 固定了实际拉取的镜像摘要，避免镜像标签变化影响重建。
 
@@ -24,6 +25,7 @@
 | 服务器路径 | 用途 |
 | --- | --- |
 | `/opt/dujiao-next/compose.yml` | 服务编排、健康检查、资源限制、重启策略 |
+| `/opt/dujiao-next/compose.public.yml` | PostgreSQL / Redis 的 TLS 端口与证书挂载 |
 | `/opt/dujiao-next/.env` | 固定的应用 / PostgreSQL / Redis 镜像版本 |
 | `/opt/dujiao-next/config/config.yml` | 应用完整配置，包含凭证和运行密钥 |
 | `/opt/dujiao-next/secrets/` | 随机生成的 PostgreSQL 管理密码、应用数据库密码、Redis 密码 |
@@ -76,6 +78,44 @@ docker compose exec redis sh -c 'REDISCLI_AUTH="$(cat /run/secrets/redis_passwor
 ```
 
 应用挂载 `./config/config.yml:/app/config.yml:ro`，应用端口绑定 `127.0.0.1:8080`，由宝塔 Nginx 反代。
+
+## 数据库客户端公网连接
+
+服务器已启用下列公网端口，阿里云安全组已放行。
+已通过电脑上的 HTTP 代理链路验证两个公网端口的 TLS 1.3、密码认证，
+并确认 PostgreSQL 拒绝公网非 TLS 连接、Redis 拒绝未认证请求。
+当前电脑不经过代理直连服务器仍超时，抓包显示服务器收到请求并发送回包，
+需要继续排查回程或本机网络路径；尚不能确认这台电脑的 Navicat 直连成功。
+按当前选择，公网来源不设 IP 白名单，使用密码与 TLS 认证。
+
+| 客户端参数 | PostgreSQL | Redis |
+| --- | --- | --- |
+| 主机 | `aiccpay.com` | `aiccpay.com` |
+| 公网端口 | `15432` | `16379` |
+| 用户 | `dujiao` | `default` |
+| 数据库 | `dujiao_next` | DB 0（缓存）/ DB 1（任务队列） |
+| SSL / TLS | 启用，验证 CA 与主机名 | 启用，验证 CA 与主机名 |
+
+密码沿用原有服务器凭证，不写入仓库。Navicat 的 SSH 隧道关闭，SSL 页启用加密和证书验证；
+使用系统可信 CA 或提供的 CA 文件，客户端证书与客户端私钥留空。证书覆盖域名，主机填写 `aiccpay.com`。
+
+服务器 `.env` 使用 `COMPOSE_FILE=compose.yml:compose.public.yml`；
+`DB_PUBLIC_BIND_IP=0.0.0.0` 启用 IPv4 公网映射，改为 `127.0.0.1` 后重建数据库容器可收回公网映射。
+阿里云安全组放行 TCP `15432`、`16379`；Docker 端口发布可能绕过 UFW，公网范围以安全组为准。
+PostgreSQL 的 `config/pg_hba.conf` 只允许公网使用 TLS、`dujiao` 账号和 `dujiao_next` 数据库，
+公网非 TLS 连接及其他数据库账号被拒绝。Redis 的公网端口映射到 TLS `6380`；
+应用仍在 Docker 内网访问 PostgreSQL `5432`、Redis `6379`。
+
+数据库证书是 `tls/aliyun/` 中站点证书的副本，分别放在 `tls/postgres/` 和 `tls/redis/`。
+更新阿里云证书时需要同步两份副本；目录和文件所有者使用相应容器服务用户的 UID/GID，
+私钥权限为 `600`，证书为 `644`。随后重建 PostgreSQL / Redis 并验证客户端 TLS 连接。
+`redis.conf` 权限为 `644`，密码单独保存在 secrets 文件中。
+
+```bash
+cd /opt/dujiao-next
+docker compose up -d --no-deps --wait --wait-timeout 180 postgres redis
+curl --fail http://127.0.0.1:8080/health
+```
 
 ## 源码构建与更新
 

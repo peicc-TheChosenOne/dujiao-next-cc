@@ -18,9 +18,12 @@ docker compose exec -T redis sh -c \
 docker compose cp redis:/tmp/dujiao-next-backup.rdb "$tmpdir/redis.rdb" >/dev/null
 docker compose exec -T redis rm -f /tmp/dujiao-next-backup.rdb
 
+optional_files=()
+[[ ! -f "$base/compose.public.yml" ]] || optional_files+=(compose.public.yml)
+
 tar -czf "$tmpdir/backup.tar.gz" \
   -C "$tmpdir" postgres.dump redis.rdb \
-  -C "$base" .env compose.yml postgres-init.sh redis.conf nginx.conf nginx-app.conf renew-cert.sh config secrets tls data/uploads \
+  -C "$base" .env compose.yml postgres-init.sh redis.conf nginx.conf nginx-app.conf renew-cert.sh config secrets tls data/uploads "${optional_files[@]}" \
   -C /www/server/panel/vhost/nginx aiccpay.com.conf extension/aiccpay.com
 archive="$backup_root/dujiao-next-$(date -u +%Y%m%dT%H%M%SZ).tar.gz"
 mv "$tmpdir/backup.tar.gz" "$archive"
