@@ -64,11 +64,11 @@ func (service *Service) Create(input UpsertInput) (*categorydomain.Category, err
 	if err := service.validateParent(nil, input.ParentID); err != nil {
 		return nil, err
 	}
-	count, err := service.repository.CountBySlug(input.Slug, nil)
+	existing, err := service.repository.GetBySlugUnscoped(input.Slug)
 	if err != nil {
 		return nil, err
 	}
-	if count > 0 {
+	if existing != nil && existing.DeletedAt == nil {
 		return nil, ErrSlugExists
 	}
 	category := categorydomain.Category{
@@ -78,6 +78,14 @@ func (service *Service) Create(input UpsertInput) (*categorydomain.Category, err
 		Icon:      input.Icon,
 		SortOrder: input.SortOrder,
 		IsActive:  true,
+	}
+	if existing != nil {
+		category.ID = existing.ID
+		category.CreatedAt = existing.CreatedAt
+		if err := service.repository.Restore(&category); err != nil {
+			return nil, err
+		}
+		return &category, nil
 	}
 	if err := service.repository.Create(&category); err != nil {
 		return nil, err

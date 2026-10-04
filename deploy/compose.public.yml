@@ -1,48 +1,9 @@
 # Enable with COMPOSE_FILE=compose.yml:compose.public.yml in the server .env.
-# Keep the default loopback binding until TLS and the security group are configured.
 services:
   postgres:
     ports:
-      - ${DB_PUBLIC_BIND_IP:-127.0.0.1}:15432:5432
-    command:
-      - postgres
-      - -c
-      - max_connections=50
-      - -c
-      - shared_buffers=128MB
-      - -c
-      - effective_cache_size=512MB
-      - -c
-      - work_mem=4MB
-      - -c
-      - maintenance_work_mem=64MB
-      - -c
-      - timezone=Asia/Shanghai
-      - -c
-      - ssl=on
-      - -c
-      - ssl_cert_file=/etc/postgresql/tls/server.crt
-      - -c
-      - ssl_key_file=/etc/postgresql/tls/server.key
-      - -c
-      - hba_file=/etc/postgresql/pg_hba.conf
-    volumes:
-      - ./tls/postgres:/etc/postgresql/tls:ro
-      - ./config/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
+      - 0.0.0.0:15432:5432
 
   redis:
     ports:
-      - ${DB_PUBLIC_BIND_IP:-127.0.0.1}:16379:6380
-    command:
-      - redis-server
-      - /usr/local/etc/redis/redis.conf
-      - --tls-port
-      - "6380"
-      - --tls-cert-file
-      - /etc/redis/tls/server.crt
-      - --tls-key-file
-      - /etc/redis/tls/server.key
-      - --tls-auth-clients
-      - "no"
-    volumes:
-      - ./tls/redis:/etc/redis/tls:ro
+      - 0.0.0.0:16379:6379
