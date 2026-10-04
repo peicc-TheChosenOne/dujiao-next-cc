@@ -20,7 +20,8 @@ docker compose exec -T redis rm -f /tmp/dujiao-next-backup.rdb
 
 tar -czf "$tmpdir/backup.tar.gz" \
   -C "$tmpdir" postgres.dump redis.rdb \
-  -C "$base" .env compose.yml postgres-init.sh redis.conf nginx.conf renew-cert.sh config secrets tls data/uploads
+  -C "$base" .env compose.yml postgres-init.sh redis.conf nginx.conf nginx-app.conf renew-cert.sh config secrets tls data/uploads \
+  -C /www/server/panel/vhost/nginx aiccpay.com.conf extension/aiccpay.com
 archive="$backup_root/dujiao-next-$(date -u +%Y%m%dT%H%M%SZ).tar.gz"
 mv "$tmpdir/backup.tar.gz" "$archive"
 find "$backup_root" -maxdepth 1 -type f -name 'dujiao-next-*.tar.gz' -mtime +14 -delete

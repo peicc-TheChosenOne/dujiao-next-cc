@@ -1,4 +1,4 @@
-# 生产环境数据库与 Redis
+# 生产环境部署
 
 当前服务器：`8.218.23.21`，2 核 / 4 GB，宝塔管理 Nginx。
 部署目录：`/opt/dujiao-next`，Compose 项目名：`dujiao-next`。
@@ -15,6 +15,10 @@
 宝塔 Docker 容器列表可以查看三个容器。
 服务器 `.env` 固定了实际拉取的镜像摘要，避免镜像标签变化影响重建。
 
+当前应用版本为 `sha-f71e07974027`，对应源码提交 `f71e079740279b4aa077e9836fd8c03153c75179`。
+已验证 HTTPS 健康检查、前台 / 后台及其静态资源、管理员登录、公共商品接口和未登录访问限制。
+首次启动完成 61 张业务表的迁移并初始化管理员；站点地址已设置为 `https://aiccpay.com`。
+
 ## 配置与数据位置
 
 | 服务器路径 | 用途 |
@@ -27,7 +31,7 @@
 | `/opt/dujiao-next/data/redis/` | Redis AOF / RDB 数据 |
 | `/opt/dujiao-next/data/uploads/` | 应用上传目录 |
 | `/opt/dujiao-next/data/logs/` | 应用日志目录 |
-| `/opt/dujiao-next/backups/` | 数据库、Redis、配置、密钥和上传文件的备份 |
+| `/opt/dujiao-next/backups/` | 数据库、Redis、应用与 Nginx 配置、密钥和上传文件的备份 |
 
 凭证只保存在服务器，未放进本仓库。不要提交运行时配置或私钥。
 Compose 文件中的 secrets 是本机文件挂载；密码文件不通过环境变量或启动参数传递。
@@ -102,8 +106,10 @@ curl --fail http://127.0.0.1:8080/health
 ## 域名与 HTTPS
 
 入口为 `https://aiccpay.com`；HTTP 和 `https://www.aiccpay.com` 都跳转到此地址。
-当前生效的 Nginx 配置位于 `/www/server/panel/vhost/nginx/aiccpay.com.conf`，保留了宝塔原有站点路由，只加入 HTTPS 及跳转。
-应用没有部署；本目录 `nginx.conf` 是后续应用反向代理的配置模板，目前没有启用。
+宝塔站点配置位于 `/www/server/panel/vhost/nginx/aiccpay.com.conf`，保留已配置的证书和跳转规则。
+应用反代通过 `/www/server/panel/vhost/nginx/extension/aiccpay.com/dujiao-app.conf` 接入，
+内容对应本目录的 `nginx-app.conf`。它同时保留 `.well-known` 文件验证目录。
+`nginx.conf` 是完整反代配置参考，更新应用反代时不需要覆盖宝塔主站点配置。
 
 使用已从阿里云取得并上传到 `/ssl` 的 DigiCert 证书，覆盖 `aiccpay.com` 和 `www.aiccpay.com`。
 证书链和匹配的私钥已部署到 `/opt/dujiao-next/tls/aliyun/`，并通过软链接接入宝塔标准证书目录：
@@ -125,7 +131,7 @@ curl -I https://www.aiccpay.com
 ## 备份
 
 每天北京时间 03:00，通过 `dujiao-next-backup.timer` 执行备份，保留 14 天。
-备份包含 PostgreSQL 自定义格式导出、Redis RDB 快照、配置、凭证和上传文件。
+备份包含 PostgreSQL 自定义格式导出、Redis RDB 快照、应用配置、Nginx 站点和扩展配置、凭证、证书和上传文件。
 备份文件权限限制为 root 可读写；目前保存在同一台服务器，正式上线时应增加异地备份。
 
 ```bash
