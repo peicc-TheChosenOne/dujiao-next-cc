@@ -4,11 +4,14 @@ import { useI18n } from 'vue-i18n'
 import { bannerAPI } from '../api'
 import { getImageUrl } from '../utils/image'
 import { useLocalized } from './useProduct'
+import { useAppStore } from '../stores/app'
 
 export function useBannerCarousel() {
   const router = useRouter()
   const { t } = useI18n()
   const { getLocalizedText } = useLocalized()
+  const appStore = useAppStore()
+  const defaultHeroTitle = computed(() => String(appStore.config?.brand?.site_name || '').trim() || t('home.hero.title'))
 
   const banners = ref<any[]>([])
   const bannerLoading = ref(true)
@@ -92,8 +95,8 @@ export function useBannerCarousel() {
   })
 
   const heroTitle = computed(() => {
-    if (!heroBanner.value) return t('home.hero.title')
-    return getLocalizedText(heroBanner.value.title) || t('home.hero.title')
+    if (!heroBanner.value) return defaultHeroTitle.value
+    return getLocalizedText(heroBanner.value.title) || defaultHeroTitle.value
   })
 
   const heroSubtitle = computed(() => {

@@ -113,6 +113,9 @@ func TestUpdateSiteSettingNormalized(t *testing.T) {
 		"contact": map[string]interface{}{
 			"telegram": "  https://t.me/demo  ",
 			"whatsapp": 123,
+			"wechat":   "  demo_support  ",
+			"qq":       "  123456789  ",
+			"email":    "  support@example.com  ",
 		},
 		"seo": map[string]interface{}{
 			"title": map[string]interface{}{
@@ -233,6 +236,22 @@ func TestUpdateSiteSettingNormalized(t *testing.T) {
 	}
 	if contact["whatsapp"] != "" {
 		t.Fatalf("unexpected whatsapp: %v", contact["whatsapp"])
+	}
+	for key, want := range map[string]interface{}{
+		"wechat": "demo_support",
+		"qq":     "123456789",
+		"email":  "support@example.com",
+	} {
+		if contact[key] != want {
+			t.Fatalf("unexpected contact.%s: %v", key, contact[key])
+		}
+	}
+	publicConfig, err := svc.GetConfig(nil)
+	if err != nil {
+		t.Fatalf("read public config failed: %v", err)
+	}
+	if !reflect.DeepEqual(publicConfig["contact"], contact) {
+		t.Fatalf("stored contact was lost in public config: %v", publicConfig["contact"])
 	}
 
 	seo, ok := result["seo"].(map[string]interface{})
@@ -429,6 +448,32 @@ func TestUpdateSiteSettingNormalizedDefaultAbout(t *testing.T) {
 	}
 	if len(serviceItems) != 0 {
 		t.Fatalf("unexpected default about.services.items size: %d", len(serviceItems))
+	}
+}
+
+func TestUpdateSiteContactDefaultsAndClear(t *testing.T) {
+	repo := newMockSettingRepo()
+	svc := NewService(repo)
+
+	for _, input := range []map[string]interface{}{
+		{"telegram": "https://t.me/demo"},
+		{"wechat": "demo_support", "qq": "123456789", "email": "support@example.com"},
+		{"wechat": " ", "qq": "", "email": " "},
+	} {
+		result, err := svc.Update(constants.SettingKeySiteConfig, map[string]interface{}{"contact": input})
+		if err != nil {
+			t.Fatalf("update site contact failed: %v", err)
+		}
+		contact := result["contact"].(map[string]interface{})
+		for _, key := range []string{"wechat", "qq", "email"} {
+			want := ""
+			if value, ok := input[key].(string); ok && value != " " {
+				want = value
+			}
+			if contact[key] != want {
+				t.Fatalf("contact.%s = %v, want %q", key, contact[key], want)
+			}
+		}
 	}
 }
 

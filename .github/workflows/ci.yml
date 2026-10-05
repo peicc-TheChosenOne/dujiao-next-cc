@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - dev
+      - codex/deploy-aiccpay
   pull_request:
 
 permissions:
