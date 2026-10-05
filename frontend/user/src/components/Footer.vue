@@ -70,6 +70,26 @@
               </svg>
               <span>WhatsApp</span>
             </a>
+            <button v-if="config?.contact?.wechat" type="button"
+              :title="t('footer.copyContact', { name: t('footer.wechat') })"
+              class="flex w-full items-center space-x-3 text-left text-sm hover:text-foreground transition-colors p-3 rounded-lg bg-gray-50 dark:bg-white/5 hover:bg-gray-100 dark:hover:bg-white/10 border border-gray-100 dark:border-white/5 hover:border-gray-200 dark:hover:border-white/10"
+              @click="handleCopyContact(config.contact.wechat)">
+              <MessageCircle class="h-5 w-5 shrink-0 text-green-500" />
+              <span class="break-all">{{ t('footer.wechat') }}: {{ config.contact.wechat }}</span>
+            </button>
+            <button v-if="config?.contact?.qq" type="button"
+              :title="t('footer.copyContact', { name: 'QQ' })"
+              class="flex w-full items-center space-x-3 text-left text-sm hover:text-foreground transition-colors p-3 rounded-lg bg-gray-50 dark:bg-white/5 hover:bg-gray-100 dark:hover:bg-white/10 border border-gray-100 dark:border-white/5 hover:border-gray-200 dark:hover:border-white/10"
+              @click="handleCopyContact(config.contact.qq)">
+              <MessageCircle class="h-5 w-5 shrink-0 text-blue-400" />
+              <span class="break-all">QQ: {{ config.contact.qq }}</span>
+            </button>
+            <a v-if="config?.contact?.email" :href="`mailto:${encodeURIComponent(config.contact.email)}`"
+              class="flex items-center space-x-3 text-sm hover:text-foreground transition-colors p-3 rounded-lg bg-gray-50 dark:bg-white/5 hover:bg-gray-100 dark:hover:bg-white/10 border border-gray-100 dark:border-white/5 hover:border-gray-200 dark:hover:border-white/10">
+              <Mail class="h-5 w-5 shrink-0" />
+              <span class="break-all">{{ t('footer.email') }}: {{ config.contact.email }}</span>
+            </a>
+            <p v-if="contactCopyMessage" role="status" class="text-xs">{{ contactCopyMessage }}</p>
           </div>
         </div>
       </div>
@@ -80,18 +100,7 @@
         <div class="space-y-1 text-center md:text-left">
           <p>&copy; {{ currentYear }} {{ brandSiteName }}. {{ t('footer.rights') }}</p>
           <p class="flex items-center justify-center gap-1 md:justify-start">
-            <a
-              href="https://github.com/dujiao-next"
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label="Dujiao-Next on GitHub"
-              class="inline-flex items-center gap-1.5 hover:text-gray-900 dark:hover:text-gray-400"
-            >
-              <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                <path d="M12 .5C5.648.5.5 5.648.5 12c0 5.084 3.292 9.4 7.86 10.922.575.106.784-.25.784-.556 0-.273-.01-1-.016-1.962-3.197.694-3.872-1.54-3.872-1.54-.522-1.326-1.274-1.678-1.274-1.678-1.042-.713.079-.699.079-.699 1.152.081 1.758 1.183 1.758 1.183 1.024 1.755 2.688 1.248 3.343.954.104-.742.401-1.248.73-1.535-2.552-.29-5.236-1.276-5.236-5.678 0-1.254.448-2.28 1.182-3.084-.118-.29-.512-1.457.112-3.04 0 0 .964-.308 3.158 1.178a10.98 10.98 0 0 1 2.876-.387c.976.004 1.96.132 2.878.387 2.192-1.486 3.154-1.178 3.154-1.178.626 1.583.232 2.75.114 3.04.736.804 1.18 1.83 1.18 3.084 0 4.413-2.688 5.384-5.248 5.668.412.354.78 1.052.78 2.12 0 1.53-.014 2.764-.014 3.14 0 .31.206.668.79.554C20.212 21.396 23.5 17.083 23.5 12 23.5 5.648 18.352.5 12 .5Z" />
-              </svg>
-              <span>Dujiao-Next</span>
-            </a>
+            <span>Dujiao-Next</span>
           </p>
         </div>
         <div class="flex flex-col items-center gap-2 md:items-end">
@@ -116,21 +125,33 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Home, LayoutGrid, Newspaper, Info } from 'lucide-vue-next'
+import { Home, LayoutGrid, Newspaper, Info, MessageCircle, Mail } from 'lucide-vue-next'
 import { useAppStore } from '../stores/app'
 import { getImageUrl } from '../utils/image'
 import { getLocalizedText } from '../utils/resellerSiteConfig'
+import { copyText } from '../utils/clipboard'
 
 const { t } = useI18n()
 const appStore = useAppStore()
 
 const config = computed(() => appStore.config)
+const contactCopyMessage = ref('')
+
+const handleCopyContact = async (value: string) => {
+  contactCopyMessage.value = ''
+  try {
+    await copyText(value)
+    contactCopyMessage.value = t('footer.copySuccess')
+  } catch {
+    contactCopyMessage.value = t('footer.copyFailed')
+  }
+}
 
 const brandSiteName = computed(() => {
   const siteName = config.value?.brand?.site_name
-  return typeof siteName === 'string' && siteName.trim() ? siteName.trim() : 'Dujiao-Next'
+  return typeof siteName === 'string' && siteName.trim() ? siteName.trim() : 'AI大玩家'
 })
 
 const brandDescription = computed(() => {

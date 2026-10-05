@@ -28,13 +28,8 @@ import (
 )
 
 const (
-	ansiReset     = "\033[0m"
-	ansiBold      = "\033[1m"
-	ansiDim       = "\033[2m"
-	ansiGreen     = "\033[32m"
-	ansiBlue      = "\033[34m"
-	ansiCyan      = "\033[36m"
-	ansiBrightMag = "\033[95m"
+	ansiReset = "\033[0m"
+	ansiGreen = "\033[32m"
 )
 
 func main() {
@@ -216,22 +211,7 @@ func printStartupBanner() {
 }
 
 func writeStartupBanner(w io.Writer) {
-	fmt.Fprintln(w, ansiBrightMag+"╔══════════════════════════════════════════════════════════════════════╗"+ansiReset)
-	fmt.Fprintln(w, ansiBrightMag+"║                      🚀 Dujiao-Next 启动中                  	      ║"+ansiReset)
-	fmt.Fprintln(w, ansiBrightMag+"╚══════════════════════════════════════════════════════════════════════╝"+ansiReset)
-	fmt.Fprintln(w, ansiCyan+"██████╗ ██╗   ██╗     ██╗ █████╗  ██████╗      ███╗   ██╗███████╗██╗  ██╗████████╗"+ansiReset)
-	fmt.Fprintln(w, ansiCyan+"██╔══██╗██║   ██║     ██║██╔══██╗██╔═══██╗     ████╗  ██║██╔════╝╚██╗██╔╝╚══██╔══╝"+ansiReset)
-	fmt.Fprintln(w, ansiCyan+"██║  ██║██║   ██║     ██║███████║██║   ██║     ██╔██╗ ██║█████╗   ╚███╔╝    ██║   "+ansiReset)
-	fmt.Fprintln(w, ansiCyan+"██║  ██║██║   ██║██   ██║██╔══██║██║   ██║     ██║╚██╗██║██╔══╝   ██╔██╗    ██║   "+ansiReset)
-	fmt.Fprintln(w, ansiCyan+"██████╔╝╚██████╔╝╚█████╔╝██║  ██║╚██████╔╝     ██║ ╚████║███████╗██╔╝ ██╗   ██║   "+ansiReset)
-	fmt.Fprintln(w, ansiCyan+"╚═════╝  ╚═════╝  ╚════╝ ╚═╝  ╚═╝ ╚═════╝      ╚═╝  ╚═══╝╚══════╝╚═╝  ╚═╝   ╚═╝   "+ansiReset)
-	fmt.Fprintln(w, ansiGreen+ansiBold+"Open Source Repositories"+ansiReset)
-	fmt.Fprintln(w, ansiBlue+"• Organization:  https://github.com/dujiao-next"+ansiReset)
-	fmt.Fprintln(w, ansiBlue+"• Main:    		 https://github.com/dujiao-next/dujiao-next"+ansiReset)
-	fmt.Fprintln(w, ansiBlue+"• Official:		 https://dujiao-next.com"+ansiReset)
-	fmt.Fprintln(w, ansiBlue+"• Discussion Group: https://t.me/dujiaonext_official"+ansiReset)
-	fmt.Fprintln(w, ansiGreen+"Version: "+version.Version+ansiReset)
-	fmt.Fprintln(w, ansiDim+"--------------------------------------------------------------"+ansiReset)
+	fmt.Fprintln(w, "Version: "+version.Version)
 }
 
 func isWeakSecret(secret string) bool {

@@ -1,6 +1,6 @@
 {
   "common": {
-    "siteName": "Dujiao-Next",
+    "siteName": "AI大玩家",
     "loading": "Loading...",
     "error": "Error",
     "success": "Success",
@@ -99,6 +99,11 @@
     "description": "Professional online studio providing quality products and services.",
     "quickLinks": "Quick Links",
     "contact": "Contact Us",
+    "wechat": "WeChat",
+    "email": "Email",
+    "copyContact": "Click to copy {name} ID",
+    "copySuccess": "Copied to clipboard",
+    "copyFailed": "Copy failed. Please copy the ID manually",
     "rights": "All rights reserved",
     "terms": "Terms of Service",
     "privacy": "Privacy Policy"
@@ -112,7 +117,7 @@
   },
   "home": {
     "hero": {
-      "title": "Dujiao-Next",
+      "title": "AI大玩家",
       "subtitle": "Professional Products and Services Provider",
       "cta": "Browse Products",
       "badge": "Next Gen Digital Store"

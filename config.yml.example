@@ -5,7 +5,7 @@
 
 app:
   secret_key: your-secret-key-change-in-production-please # 务必修改，用于 AES-256 加密敏感数据
-  totp_issuer: Dujiao-Next                          # 后台 2FA 验证器中显示的发行方名称（避免 & 等特殊字符）
+  totp_issuer: AI大玩家                            # 用户/管理员 2FA 验证器中显示的发行方名称（避免 & 等特殊字符）
 
 server:
   host: 0.0.0.0

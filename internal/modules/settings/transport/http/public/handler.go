@@ -130,8 +130,11 @@ func (h *Handler) GetConfig(c *gin.Context) {
 		constants.SettingFieldSiteCurrency:       constants.SiteCurrencyDefault,
 		constants.SettingFieldStorefrontTemplate: constants.StorefrontTemplateDefault,
 		"contact": map[string]interface{}{
-			"telegram": "https://telegram.me/dujiaoka",
-			"whatsapp": "https://wa.me/1234567890",
+			"telegram": "",
+			"whatsapp": "",
+			"wechat":   "",
+			"qq":       "",
+			"email":    "",
 		},
 		"scripts": make([]interface{}, 0),
 	}

@@ -113,6 +113,10 @@
           <RouterLink v-if="!userAuthStore.isAuthenticated" to="/guest/orders" class="flex items-center gap-[7px] py-[5px] text-[14.5px] text-muted-foreground hover:text-primary"><ClipboardList class="h-4 w-4" /> {{ t('navbar.guestOrders') }}</RouterLink>
           <a v-if="contact?.telegram" :href="contact.telegram" target="_blank" rel="noopener noreferrer" class="flex items-center gap-[7px] py-[5px] text-[14.5px] text-muted-foreground hover:text-primary"><Send class="h-4 w-4" /> Telegram</a>
           <a v-if="contact?.whatsapp" :href="contact.whatsapp" target="_blank" rel="noopener noreferrer" class="flex items-center gap-[7px] py-[5px] text-[14.5px] text-muted-foreground hover:text-primary"><MessageCircle class="h-4 w-4" /> WhatsApp</a>
+          <button v-if="contact?.wechat" type="button" :title="t('footer.copyContact', { name: t('footer.wechat') })" class="flex items-center gap-[7px] py-[5px] text-left text-[14.5px] text-muted-foreground hover:text-primary" @click="handleCopyContact(contact.wechat)"><MessageCircle class="h-4 w-4 shrink-0" /> <span class="break-all">{{ t('footer.wechat') }}: {{ contact.wechat }}</span></button>
+          <button v-if="contact?.qq" type="button" :title="t('footer.copyContact', { name: 'QQ' })" class="flex items-center gap-[7px] py-[5px] text-left text-[14.5px] text-muted-foreground hover:text-primary" @click="handleCopyContact(contact.qq)"><MessageCircle class="h-4 w-4 shrink-0" /> <span class="break-all">QQ: {{ contact.qq }}</span></button>
+          <a v-if="contact?.email" :href="`mailto:${encodeURIComponent(contact.email)}`" class="flex items-center gap-[7px] py-[5px] text-[14.5px] text-muted-foreground hover:text-primary"><Mail class="h-4 w-4 shrink-0" /> <span class="break-all">{{ t('footer.email') }}: {{ contact.email }}</span></a>
+          <p v-if="contactCopyMessage" role="status" class="text-xs text-muted-foreground">{{ contactCopyMessage }}</p>
         </div>
         <div>
           <h4 class="mb-3 text-sm font-bold">{{ t('vault.footer.legal') }}</h4>
@@ -124,10 +128,7 @@
       <div class="mx-auto flex w-full max-w-[1180px] flex-wrap items-center justify-between gap-3.5 border-t px-6 pb-[30px] pt-[18px] text-[13.5px] text-muted-foreground">
         <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
           <span>© {{ year }} {{ brandName }}</span>
-          <a href="https://github.com/dujiao-next" target="_blank" rel="noopener noreferrer" aria-label="Dujiao-Next on GitHub" class="inline-flex items-center gap-1.5 hover:text-primary">
-            <Github class="h-[15px] w-[15px]" />
-            <span>Dujiao-Next</span>
-          </a>
+          <span>Dujiao-Next</span>
         </div>
         <span>简体中文 · 繁體 · English</span>
       </div>
@@ -139,8 +140,8 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
-  Search, Moon, Sun, ShoppingCart, Languages, Menu, X, User, Info, ClipboardList, LogOut, Github,
-  LayoutGrid, Send, MessageCircle,
+  Search, Moon, Sun, ShoppingCart, Languages, Menu, X, User, Info, ClipboardList, LogOut,
+  LayoutGrid, Send, MessageCircle, Mail,
 } from 'lucide-vue-next'
 import { useAppStore } from '../../../stores/app'
 import { useCartStore } from '../../../stores/cart'
@@ -149,6 +150,7 @@ import { useNavConfig, type NavItem } from '../../../composables/useNavConfig'
 import { useTheme } from '../../../utils/theme'
 import { getImageUrl } from '../../../utils/image'
 import { getLocalizedText } from '../../../utils/resellerSiteConfig'
+import { copyText } from '../../../utils/clipboard'
 // 本地自托管字体（替代 Google Fonts CDN），仅 vault 模板加载
 import '@fontsource/rubik/latin-400.css'
 import '@fontsource/rubik/latin-500.css'
@@ -174,7 +176,7 @@ const moreEl = ref<HTMLElement | null>(null)
 
 const year = new Date().getFullYear()
 
-const brandName = computed(() => String(appStore.config?.brand?.site_name || '').trim() || 'D&J Studio')
+const brandName = computed(() => String(appStore.config?.brand?.site_name || '').trim() || 'AI大玩家')
 const brandLogo = computed(() => {
   const raw = String(appStore.config?.brand?.site_logo || '').trim()
   return raw ? getImageUrl(raw) : ''
@@ -213,7 +215,18 @@ const footerLinks = computed(() => {
     .filter((item) => item.name)
 })
 
-const contact = computed(() => appStore.config?.contact as { telegram?: string; whatsapp?: string } | undefined)
+const contact = computed(() => appStore.config?.contact as { telegram?: string; whatsapp?: string; wechat?: string; qq?: string; email?: string } | undefined)
+const contactCopyMessage = ref('')
+
+const handleCopyContact = async (value: string) => {
+  contactCopyMessage.value = ''
+  try {
+    await copyText(value)
+    contactCopyMessage.value = t('footer.copySuccess')
+  } catch {
+    contactCopyMessage.value = t('footer.copyFailed')
+  }
+}
 
 const cartCount = computed(() => cartStore.totalItems)
 
