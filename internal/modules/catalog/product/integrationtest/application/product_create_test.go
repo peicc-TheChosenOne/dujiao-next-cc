@@ -2,6 +2,7 @@ package integrationtest
 
 import (
 	"errors"
+	"strconv"
 	"testing"
 
 	productwrite "github.com/dujiao-next/internal/modules/catalog/product/application/write"
@@ -14,6 +15,37 @@ import (
 	"github.com/dujiao-next/internal/shared/jsonmap"
 	"github.com/shopspring/decimal"
 )
+
+func TestProductServiceCreateReusesDeletedSlugWithNewSKU(t *testing.T) {
+	svc, db := newProductServiceForTest(t)
+	category := categorydomain.Category{Slug: "slug-reuse", NameJSON: jsonmap.JSON{"zh-CN": "test"}}
+	if err := db.Create(&category).Error; err != nil {
+		t.Fatal(err)
+	}
+	input := productwrite.CreateProductInput{
+		CategoryID: category.ID, Slug: "chatgpt-plus",
+		TitleJSON:   map[string]interface{}{"zh-CN": "ChatGPT Plus"},
+		PriceAmount: decimal.NewFromInt(10), PurchaseType: constants.ProductPurchaseMember,
+		FulfillmentType: constants.FulfillmentTypeManual,
+	}
+	original, err := svc.Write.Create(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Admin.Delete(strconv.FormatUint(uint64(original.ID), 10)); err != nil {
+		t.Fatal(err)
+	}
+	replacement, err := svc.Write.Create(input)
+	if err != nil {
+		t.Fatalf("recreate deleted slug: %v", err)
+	}
+	if replacement.ID == original.ID || len(replacement.SKUs) != 1 || replacement.SKUs[0].ProductID != replacement.ID {
+		t.Fatalf("replacement must own a new product and SKU: %+v", replacement)
+	}
+	if _, err := svc.Write.Create(input); !errors.Is(err, productcontract.ErrSlugExists) {
+		t.Fatalf("active duplicate must return ErrSlugExists, got %v", err)
+	}
+}
 
 func TestProductServiceCreateRejectsParentCategoryWithChildren(t *testing.T) {
 	svc, db := newProductServiceForTest(t)
