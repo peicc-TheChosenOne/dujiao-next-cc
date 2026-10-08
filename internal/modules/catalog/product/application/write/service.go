@@ -11,7 +11,9 @@ import (
 // ProductRepository 是商品创建和更新所需的最小持久化端口。
 type ProductRepository interface {
 	GetByID(id string) (*productdomain.Product, error)
+	GetBySlugUnscoped(slug string) (*productdomain.Product, error)
 	Create(item *productdomain.Product) error
+	Restore(item *productdomain.Product) error
 	Update(item *productdomain.Product) error
 	CountBySlug(slug string, excludeID *string) (int64, error)
 	QuickUpdate(id string, fields map[string]interface{}) error

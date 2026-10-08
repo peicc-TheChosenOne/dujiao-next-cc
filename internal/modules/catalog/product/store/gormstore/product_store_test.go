@@ -1,6 +1,7 @@
 package gormstore
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"testing"
@@ -290,31 +291,37 @@ func TestProductStoreSoftDeleteHidesProductAndRejectsStockMutations(t *testing.T
 	}
 }
 
-func TestProductStoreReusesDeletedSlugAndKeepsActiveSlugsUnique(t *testing.T) {
+func TestProductStoreRestoresDeletedProductAndRejectsSecondRestore(t *testing.T) {
 	repo, db := setupProductStoreTest(t)
-	original := createManualProduct(t, repo, "reusable-product", 10, 0, 0)
-	for i := 0; i < 2; i++ {
-		if err := repo.Delete(strconv.FormatUint(uint64(original.ID), 10)); err != nil {
-			t.Fatalf("delete product: %v", err)
-		}
-		replacement := createManualProduct(t, repo, original.Slug, 5, 0, 0)
-		if replacement.ID == original.ID {
-			t.Fatal("replacement must have a new identity")
-		}
-		var deleted productdomain.Product
-		if err := db.First(&deleted, original.ID).Error; err != nil || deleted.DeletedAt == nil || deleted.Slug != original.Slug {
-			t.Fatalf("deleted product history must be preserved: %+v err=%v", deleted, err)
-		}
-		duplicate := productdomain.Product{CategoryID: 1, Slug: original.Slug, TitleJSON: original.TitleJSON}
-		if err := repo.Create(&duplicate); err == nil {
-			t.Fatal("database must reject duplicate active slugs")
-		}
-		other := createManualProduct(t, repo, fmt.Sprintf("other-product-%d", i), 5, 0, 0)
-		other.Slug = replacement.Slug
-		if err := repo.Update(other); err == nil {
-			t.Fatal("database must reject updating to an occupied active slug")
-		}
-		original = replacement
+	original := createManualProduct(t, repo, "restorable-product", 10, 0, 0)
+	if err := repo.Delete(strconv.FormatUint(uint64(original.ID), 10)); err != nil {
+		t.Fatal(err)
+	}
+	deleted, err := repo.GetBySlugUnscoped(original.Slug)
+	if err != nil || deleted == nil || deleted.DeletedAt == nil {
+		t.Fatalf("load deleted product: %+v err=%v", deleted, err)
+	}
+	duplicate := productdomain.Product{CategoryID: 1, Slug: original.Slug, TitleJSON: original.TitleJSON}
+	if err := repo.Create(&duplicate); err == nil {
+		t.Fatal("global slug uniqueness must include deleted products")
+	}
+	deleted.TitleJSON = jsonmap.JSON{"zh-CN": "Restored title"}
+	if err := repo.Restore(deleted); err != nil {
+		t.Fatal(err)
+	}
+	var restored productdomain.Product
+	if err := db.First(&restored, original.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if restored.DeletedAt != nil || restored.TitleJSON["zh-CN"] != "Restored title" || !restored.CreatedAt.Equal(original.CreatedAt) {
+		t.Fatalf("restore must retain identity and update fields: %+v", restored)
+	}
+	deleted.TitleJSON = jsonmap.JSON{"zh-CN": "Second request"}
+	if err := repo.Restore(deleted); !errors.Is(err, productcontract.ErrSlugExists) {
+		t.Fatalf("second restore must reject an already restored product, got %v", err)
+	}
+	if err := db.First(&restored, original.ID).Error; err != nil || restored.TitleJSON["zh-CN"] != "Restored title" {
+		t.Fatalf("second restore must not overwrite existing content: %+v err=%v", restored, err)
 	}
 }
 

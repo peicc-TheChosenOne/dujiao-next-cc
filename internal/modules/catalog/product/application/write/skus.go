@@ -25,6 +25,9 @@ func (s *WriteService) syncSingleProductSKU(skuRepo SKURepository, productID uin
 		if !createWhenMissing {
 			return nil
 		}
+		if err := skuRepo.PurgeSoftDeletedByProductAndCode(productID, productdomain.DefaultSKUCode); err != nil {
+			return err
+		}
 		return skuRepo.Create(&productdomain.ProductSKU{
 			ProductID:         productID,
 			SKUCode:           productdomain.DefaultSKUCode,
