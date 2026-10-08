@@ -67,6 +67,7 @@ export function useAbout() {
   })
 
   return {
+    t,
     contactConfig,
     heroTitle,
     heroSubtitle,

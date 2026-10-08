@@ -293,7 +293,7 @@ onUnmounted(() => {
         </CardContent>
       </Card>
       <p class="mt-4 flex items-center justify-center gap-1 text-center text-xs text-muted-foreground">
-        <span>© {{ new Date().getFullYear() }} Dujiao-Next</span>
+        <span>© {{ new Date().getFullYear() }} {{ brandSiteName }}</span>
       </p>
     </div>
   </div>

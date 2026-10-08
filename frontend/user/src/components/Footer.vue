@@ -51,7 +51,7 @@
         <!-- Contact -->
         <div>
           <h4 class="text-foreground font-bold mb-6 tracking-wide">{{ t('footer.contact') }}</h4>
-          <div class="space-y-4">
+          <div class="space-y-3">
             <a v-if="config?.contact?.telegram" :href="config.contact.telegram" target="_blank"
               rel="noopener noreferrer"
               class="flex items-center space-x-3 text-sm hover:text-gray-900 dark:hover:text-white transition-colors p-3 rounded-lg bg-gray-50 dark:bg-white/5 hover:bg-gray-100 dark:hover:bg-white/10 border border-gray-100 dark:border-white/5 hover:border-gray-200 dark:hover:border-white/10">
@@ -70,26 +70,9 @@
               </svg>
               <span>WhatsApp</span>
             </a>
-            <button v-if="config?.contact?.wechat" type="button"
-              :title="t('footer.copyContact', { name: t('footer.wechat') })"
-              class="flex w-full items-center space-x-3 text-left text-sm hover:text-foreground transition-colors p-3 rounded-lg bg-gray-50 dark:bg-white/5 hover:bg-gray-100 dark:hover:bg-white/10 border border-gray-100 dark:border-white/5 hover:border-gray-200 dark:hover:border-white/10"
-              @click="handleCopyContact(config.contact.wechat)">
-              <MessageCircle class="h-5 w-5 shrink-0 text-green-500" />
-              <span class="break-all">{{ t('footer.wechat') }}: {{ config.contact.wechat }}</span>
-            </button>
-            <button v-if="config?.contact?.qq" type="button"
-              :title="t('footer.copyContact', { name: 'QQ' })"
-              class="flex w-full items-center space-x-3 text-left text-sm hover:text-foreground transition-colors p-3 rounded-lg bg-gray-50 dark:bg-white/5 hover:bg-gray-100 dark:hover:bg-white/10 border border-gray-100 dark:border-white/5 hover:border-gray-200 dark:hover:border-white/10"
-              @click="handleCopyContact(config.contact.qq)">
-              <MessageCircle class="h-5 w-5 shrink-0 text-blue-400" />
-              <span class="break-all">QQ: {{ config.contact.qq }}</span>
-            </button>
-            <a v-if="config?.contact?.email" :href="`mailto:${encodeURIComponent(config.contact.email)}`"
-              class="flex items-center space-x-3 text-sm hover:text-foreground transition-colors p-3 rounded-lg bg-gray-50 dark:bg-white/5 hover:bg-gray-100 dark:hover:bg-white/10 border border-gray-100 dark:border-white/5 hover:border-gray-200 dark:hover:border-white/10">
-              <Mail class="h-5 w-5 shrink-0" />
-              <span class="break-all">{{ t('footer.email') }}: {{ config.contact.email }}</span>
-            </a>
-            <p v-if="contactCopyMessage" role="status" class="text-xs">{{ contactCopyMessage }}</p>
+            <ContactCopyButton v-if="config?.contact?.wechat" kind="wechat" :value="config.contact.wechat" />
+            <ContactCopyButton v-if="config?.contact?.qq" kind="qq" :value="config.contact.qq" />
+            <ContactCopyButton v-if="config?.contact?.email" kind="email" :value="config.contact.email" />
           </div>
         </div>
       </div>
@@ -99,9 +82,6 @@
         class="border-t pt-8 flex flex-col md:flex-row items-center justify-between gap-4 text-xs text-muted-foreground">
         <div class="space-y-1 text-center md:text-left">
           <p>&copy; {{ currentYear }} {{ brandSiteName }}. {{ t('footer.rights') }}</p>
-          <p class="flex items-center justify-center gap-1 md:justify-start">
-            <span>Dujiao-Next</span>
-          </p>
         </div>
         <div class="flex flex-col items-center gap-2 md:items-end">
           <div class="flex flex-wrap items-center gap-x-4 gap-y-1 justify-center md:justify-end">
@@ -125,29 +105,18 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Home, LayoutGrid, Newspaper, Info, MessageCircle, Mail } from 'lucide-vue-next'
+import { Home, LayoutGrid, Newspaper, Info } from 'lucide-vue-next'
 import { useAppStore } from '../stores/app'
 import { getImageUrl } from '../utils/image'
 import { getLocalizedText } from '../utils/resellerSiteConfig'
-import { copyText } from '../utils/clipboard'
+import ContactCopyButton from './ContactCopyButton.vue'
 
 const { t } = useI18n()
 const appStore = useAppStore()
 
 const config = computed(() => appStore.config)
-const contactCopyMessage = ref('')
-
-const handleCopyContact = async (value: string) => {
-  contactCopyMessage.value = ''
-  try {
-    await copyText(value)
-    contactCopyMessage.value = t('footer.copySuccess')
-  } catch {
-    contactCopyMessage.value = t('footer.copyFailed')
-  }
-}
 
 const brandSiteName = computed(() => {
   const siteName = config.value?.brand?.site_name

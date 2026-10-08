@@ -101,9 +101,9 @@
     "contact": "Contact Us",
     "wechat": "WeChat",
     "email": "Email",
-    "copyContact": "Click to copy {name} ID",
+    "copyContact": "Click to copy {name}",
     "copySuccess": "Copied to clipboard",
-    "copyFailed": "Copy failed. Please copy the ID manually",
+    "copyFailed": "Copy failed. Please copy manually",
     "rights": "All rights reserved",
     "terms": "Terms of Service",
     "privacy": "Privacy Policy"
@@ -263,6 +263,7 @@
     "dismissForever": "Don't show again"
   },
   "about": {
+    "openSourceNotice": "Open-source notice: This website is based on Dujiao-Next. The original project is licensed under GNU GPL v3.0.",
     "title": "About Us",
     "subtitle": "Learn about Dujiao-Next",
     "introduction": "Dujiao-Next is a professional online studio dedicated to providing high-quality products and services to our customers. Innovation, professionalism, and efficiency are our core values, and we constantly pursue excellence to create value for our customers.",
