@@ -38,6 +38,9 @@
           </a>
         </div>
       </div>
+      <p class="mt-8 border-t pt-6 text-sm text-muted-foreground">
+        {{ t('about.openSourceNotice') }}
+      </p>
     </Card>
   </div>
 </template>
@@ -48,6 +51,7 @@ import { Card } from '@/components/ui/card'
 import { useAbout } from '../../composables/useAbout'
 
 const {
+  t,
   contactConfig, heroTitle, heroSubtitle, introductionText, servicesTitle, contactTitle, contactText,
   serviceItems, hasIntroduction, hasServices, hasContactLinks, hasContact,
 } = useAbout()

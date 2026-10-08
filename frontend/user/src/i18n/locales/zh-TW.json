@@ -101,9 +101,9 @@
     "contact": "聯絡我們",
     "wechat": "微信",
     "email": "電子郵件",
-    "copyContact": "點擊複製{name}號碼",
+    "copyContact": "點擊複製{name}",
     "copySuccess": "已複製到剪貼簿",
-    "copyFailed": "複製失敗，請手動複製號碼",
+    "copyFailed": "複製失敗，請手動複製",
     "rights": "保留所有權利",
     "terms": "服務條款",
     "privacy": "隱私政策"
@@ -263,6 +263,7 @@
     "dismissForever": "不再提示"
   },
   "about": {
+    "openSourceNotice": "開源說明：本網站基於 Dujiao-Next 二次開發，原專案採用 GNU GPL v3.0 授權。",
     "title": "關於我們",
     "subtitle": "了解Dujiao-Next",
     "introduction": "Dujiao-Next（D&N）是一家專業的線上工作室，致力於為客戶提供優質的產品和服務。我們以創新、專業、高效為核心價值觀，不斷追求卓越，為客戶創造價值。",
