@@ -98,6 +98,9 @@ func AutoMigrate() error {
 		return err
 	}
 
+	if err := ensureProductSlugUniqueIndex(); err != nil {
+		return err
+	}
 	if err := ensureUserOAuthIdentityUserProviderUniqueIndex(); err != nil {
 		return err
 	}
