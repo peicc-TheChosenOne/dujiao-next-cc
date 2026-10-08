@@ -135,7 +135,20 @@ func (s *WriteService) Create(input CreateProductInput) (*productdomain.Product,
 		productRepo := repositories.Products
 		skuRepo := repositories.SKUs
 		cardSecretRepo := repositories.CardSecrets
-		if err := productRepo.Create(&product); err != nil {
+		existing, err := productRepo.GetBySlugUnscoped(input.Slug)
+		if err != nil {
+			return err
+		}
+		if existing != nil {
+			if existing.DeletedAt == nil {
+				return productcontract.ErrSlugExists
+			}
+			product.ID = existing.ID
+			product.CreatedAt = existing.CreatedAt
+			if err := productRepo.Restore(&product); err != nil {
+				return err
+			}
+		} else if err := productRepo.Create(&product); err != nil {
 			return err
 		}
 		if len(normalizedSKUs) > 0 {

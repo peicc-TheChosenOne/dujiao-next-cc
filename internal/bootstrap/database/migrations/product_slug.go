@@ -6,11 +6,11 @@ import (
 )
 
 func ensureProductSlugUniqueIndex() error {
-	// AutoMigrate creates idx_products_active_slug first, preserving uniqueness
-	// for live products before releasing slugs held by historical deleted rows.
+	// AutoMigrate restores the global index first. Creation now restores deleted
+	// products in place, so remove the previous active-only uniqueness rule.
 	migrator := gormdb.DB.Migrator()
-	if migrator.HasIndex(&productdomain.Product{}, "idx_products_slug") {
-		return migrator.DropIndex(&productdomain.Product{}, "idx_products_slug")
+	if migrator.HasIndex(&productdomain.Product{}, "idx_products_active_slug") {
+		return migrator.DropIndex(&productdomain.Product{}, "idx_products_active_slug")
 	}
 	return nil
 }

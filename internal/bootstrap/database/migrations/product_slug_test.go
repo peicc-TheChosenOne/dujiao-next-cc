@@ -8,13 +8,15 @@ import (
 	"github.com/dujiao-next/internal/shared/jsonmap"
 )
 
-func TestAutoMigrateReleasesLegacyDeletedProductSlugs(t *testing.T) {
+func TestAutoMigrateRestoresGlobalProductSlugUniqueness(t *testing.T) {
 	db := setupSKUMigrationTestDB(t)
 	if err := db.AutoMigrate(&productdomain.Product{}); err != nil {
 		t.Fatal(err)
 	}
-	// Reproduce the global unique index used by existing installations.
-	if err := db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_products_slug ON products (slug)").Error; err != nil {
+	if err := db.Exec("DROP INDEX idx_products_slug").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("CREATE UNIQUE INDEX idx_products_active_slug ON products (slug) WHERE deleted_at IS NULL").Error; err != nil {
 		t.Fatal(err)
 	}
 	now := time.Now()
@@ -22,25 +24,20 @@ func TestAutoMigrateReleasesLegacyDeletedProductSlugs(t *testing.T) {
 	if err := db.Create(&deleted).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := AutoMigrate(); err != nil {
-		t.Fatalf("upgrade legacy schema: %v", err)
-	}
-	if db.Migrator().HasIndex(&productdomain.Product{}, "idx_products_slug") {
-		t.Fatal("legacy global slug index must be removed")
-	}
-	replacement := productdomain.Product{CategoryID: 1, Slug: deleted.Slug, TitleJSON: deleted.TitleJSON}
-	if err := db.Create(&replacement).Error; err != nil {
-		t.Fatalf("reuse legacy deleted slug: %v", err)
-	}
-	if err := AutoMigrate(); err != nil {
-		t.Fatalf("migration must remain safe after slug reuse: %v", err)
-	}
-	duplicate := productdomain.Product{CategoryID: 1, Slug: deleted.Slug, TitleJSON: deleted.TitleJSON}
-	if err := db.Create(&duplicate).Error; err == nil {
-		t.Fatal("active slug must remain unique after repeated migrations")
+	for i := 0; i < 2; i++ {
+		if err := AutoMigrate(); err != nil {
+			t.Fatalf("upgrade and repeated migration: %v", err)
+		}
+		if db.Migrator().HasIndex(&productdomain.Product{}, "idx_products_active_slug") {
+			t.Fatal("previous active-only index must be removed")
+		}
+		duplicate := productdomain.Product{CategoryID: 1, Slug: deleted.Slug, TitleJSON: deleted.TitleJSON}
+		if err := db.Create(&duplicate).Error; err == nil {
+			t.Fatal("deleted product must retain its globally unique slug")
+		}
 	}
 	var historical productdomain.Product
 	if err := db.First(&historical, deleted.ID).Error; err != nil || historical.DeletedAt == nil || historical.Slug != deleted.Slug {
-		t.Fatalf("historical row must remain unchanged: %+v err=%v", historical, err)
+		t.Fatalf("migration must preserve the deleted product: %+v err=%v", historical, err)
 	}
 }

@@ -13,6 +13,7 @@ import (
 	"github.com/dujiao-next/internal/persistence/gormutil"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // ProductStore 是 Catalog Product 端口的 GORM 实现。
@@ -255,6 +256,33 @@ func (r *ProductStore) ListByIDs(ids []uint) ([]productdomain.Product, error) {
 // Create 创建商品
 func (r *ProductStore) Create(product *productdomain.Product) error {
 	return r.db.Create(product).Error
+}
+
+// GetBySlugUnscoped 根据标识获取商品，包含已删除记录。
+func (r *ProductStore) GetBySlugUnscoped(slug string) (*productdomain.Product, error) {
+	var product productdomain.Product
+	if err := r.db.Where("slug = ?", slug).First(&product).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &product, nil
+}
+
+// Restore 原位恢复商品，完整保存本次输入（包括空值），保留原 ID 和创建时间。
+func (r *ProductStore) Restore(product *productdomain.Product) error {
+	product.DeletedAt = nil
+	result := r.db.Model(&productdomain.Product{}).
+		Where("id = ? AND deleted_at IS NOT NULL", product.ID).
+		Select("*").Omit("id", "created_at", clause.Associations).Updates(product)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return productcontract.ErrSlugExists
+	}
+	return nil
 }
 
 // Update 更新商品

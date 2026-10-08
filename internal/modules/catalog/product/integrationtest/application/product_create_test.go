@@ -2,6 +2,7 @@ package integrationtest
 
 import (
 	"errors"
+	"fmt"
 	"strconv"
 	"testing"
 
@@ -16,17 +17,76 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-func TestProductServiceCreateReusesDeletedSlugWithNewSKU(t *testing.T) {
+func TestProductServiceCreateRestoresDeletedSlug(t *testing.T) {
+	for _, multiSKU := range []bool{false, true} {
+		t.Run(fmt.Sprintf("multi_sku=%t", multiSKU), func(t *testing.T) {
+			svc, db := newProductServiceForTest(t)
+			category := categorydomain.Category{Slug: "slug-restore", NameJSON: jsonmap.JSON{"zh-CN": "test"}}
+			if err := db.Create(&category).Error; err != nil {
+				t.Fatal(err)
+			}
+			input := productwrite.CreateProductInput{
+				CategoryID: category.ID, Slug: "chatgpt-plus",
+				TitleJSON:       map[string]interface{}{"zh-CN": "Old title"},
+				DescriptionJSON: map[string]interface{}{"zh-CN": "Old description"},
+				Images:          []string{"old.png"}, SortOrder: 30,
+				PriceAmount: decimal.NewFromInt(10), PurchaseType: constants.ProductPurchaseMember,
+				FulfillmentType: constants.FulfillmentTypeManual,
+			}
+			if multiSKU {
+				input.SKUs = []productwrite.ProductSKUInput{{SKUCode: "PLUS", PriceAmount: decimal.NewFromInt(10)}}
+			}
+			original, err := svc.Write.Create(input)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for i := 0; i < 2; i++ {
+				if err := svc.Admin.Delete(strconv.FormatUint(uint64(original.ID), 10)); err != nil {
+					t.Fatal(err)
+				}
+				input.TitleJSON = map[string]interface{}{"zh-CN": "Updated title"}
+				input.DescriptionJSON = nil
+				input.Images = nil
+				input.SortOrder = 0
+				input.PriceAmount = decimal.NewFromInt(20)
+				if multiSKU {
+					input.SKUs[0].PriceAmount = decimal.NewFromInt(20)
+				}
+				restored, err := svc.Write.Create(input)
+				if err != nil {
+					t.Fatalf("restore deleted product: %v", err)
+				}
+				if restored.ID != original.ID || !restored.CreatedAt.Equal(original.CreatedAt) || restored.DeletedAt != nil || !restored.IsActive {
+					t.Fatalf("restored product must preserve identity and creation time: %+v", restored)
+				}
+				if restored.TitleJSON["zh-CN"] != "Updated title" || len(restored.DescriptionJSON) != 0 || len(restored.Images) != 0 || restored.SortOrder != 0 || !restored.PriceAmount.Equal(decimal.NewFromInt(20)) {
+					t.Fatalf("restore must apply new values including empty and zero fields: %+v", restored)
+				}
+				if len(restored.SKUs) != 1 || restored.SKUs[0].ProductID != original.ID || !restored.SKUs[0].PriceAmount.Equal(decimal.NewFromInt(20)) {
+					t.Fatalf("restored product must have the requested SKU: %+v", restored.SKUs)
+				}
+				var count int64
+				if err := db.Model(&productdomain.Product{}).Where("slug = ?", input.Slug).Count(&count).Error; err != nil || count != 1 {
+					t.Fatalf("restore must not create another product: count=%d err=%v", count, err)
+				}
+				if _, err := svc.Write.Create(input); !errors.Is(err, productcontract.ErrSlugExists) {
+					t.Fatalf("active duplicate must return ErrSlugExists, got %v", err)
+				}
+			}
+		})
+	}
+}
+
+func TestProductServiceRestoreRollsBackWhenSKUInputFails(t *testing.T) {
 	svc, db := newProductServiceForTest(t)
-	category := categorydomain.Category{Slug: "slug-reuse", NameJSON: jsonmap.JSON{"zh-CN": "test"}}
+	category := categorydomain.Category{Slug: "restore-rollback", NameJSON: jsonmap.JSON{"zh-CN": "test"}}
 	if err := db.Create(&category).Error; err != nil {
 		t.Fatal(err)
 	}
 	input := productwrite.CreateProductInput{
-		CategoryID: category.ID, Slug: "chatgpt-plus",
-		TitleJSON:   map[string]interface{}{"zh-CN": "ChatGPT Plus"},
-		PriceAmount: decimal.NewFromInt(10), PurchaseType: constants.ProductPurchaseMember,
-		FulfillmentType: constants.FulfillmentTypeManual,
+		CategoryID: category.ID, Slug: "rollback-product",
+		TitleJSON: map[string]interface{}{"zh-CN": "Original"}, PriceAmount: decimal.NewFromInt(10),
+		PurchaseType: constants.ProductPurchaseMember, FulfillmentType: constants.FulfillmentTypeManual,
 	}
 	original, err := svc.Write.Create(input)
 	if err != nil {
@@ -35,15 +95,18 @@ func TestProductServiceCreateReusesDeletedSlugWithNewSKU(t *testing.T) {
 	if err := svc.Admin.Delete(strconv.FormatUint(uint64(original.ID), 10)); err != nil {
 		t.Fatal(err)
 	}
-	replacement, err := svc.Write.Create(input)
-	if err != nil {
-		t.Fatalf("recreate deleted slug: %v", err)
+	input.TitleJSON = map[string]interface{}{"zh-CN": "Must not persist"}
+	input.SKUs = []productwrite.ProductSKUInput{{ID: 999999, SKUCode: "INVALID", PriceAmount: decimal.NewFromInt(20)}}
+	if _, err := svc.Write.Create(input); !errors.Is(err, productcontract.ErrProductSKUInvalid) {
+		t.Fatalf("expected invalid SKU error, got %v", err)
 	}
-	if replacement.ID == original.ID || len(replacement.SKUs) != 1 || replacement.SKUs[0].ProductID != replacement.ID {
-		t.Fatalf("replacement must own a new product and SKU: %+v", replacement)
+	var persisted productdomain.Product
+	if err := db.First(&persisted, original.ID).Error; err != nil || persisted.DeletedAt == nil || persisted.TitleJSON["zh-CN"] != "Original" {
+		t.Fatalf("failed restoration must leave the product deleted and unchanged: %+v err=%v", persisted, err)
 	}
-	if _, err := svc.Write.Create(input); !errors.Is(err, productcontract.ErrSlugExists) {
-		t.Fatalf("active duplicate must return ErrSlugExists, got %v", err)
+	var sku productdomain.ProductSKU
+	if err := db.First(&sku, original.SKUs[0].ID).Error; err != nil || sku.DeletedAt == nil {
+		t.Fatalf("failed restoration must retain the deleted SKU: %+v err=%v", sku, err)
 	}
 }
 
