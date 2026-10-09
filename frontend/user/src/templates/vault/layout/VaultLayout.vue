@@ -111,11 +111,11 @@
           <h4 class="mb-3 text-sm font-bold">{{ t('vault.footer.support') }}</h4>
           <RouterLink v-if="aboutEnabled" to="/about" class="flex items-center gap-[7px] py-[5px] text-[14.5px] text-muted-foreground hover:text-primary"><Info class="h-4 w-4" /> {{ t('nav.about') }}</RouterLink>
           <RouterLink v-if="!userAuthStore.isAuthenticated" to="/guest/orders" class="flex items-center gap-[7px] py-[5px] text-[14.5px] text-muted-foreground hover:text-primary"><ClipboardList class="h-4 w-4" /> {{ t('navbar.guestOrders') }}</RouterLink>
-          <a v-if="contact?.telegram" :href="contact.telegram" target="_blank" rel="noopener noreferrer" class="flex items-center gap-[7px] py-[5px] text-[14.5px] text-muted-foreground hover:text-primary"><Send class="h-4 w-4" /> Telegram</a>
-          <a v-if="contact?.whatsapp" :href="contact.whatsapp" target="_blank" rel="noopener noreferrer" class="flex items-center gap-[7px] py-[5px] text-[14.5px] text-muted-foreground hover:text-primary"><MessageCircle class="h-4 w-4" /> WhatsApp</a>
-          <ContactCopyButton v-if="contact?.wechat" kind="wechat" :value="contact.wechat" />
-          <ContactCopyButton v-if="contact?.qq" kind="qq" :value="contact.qq" />
-          <ContactCopyButton v-if="contact?.email" kind="email" :value="contact.email" />
+          <a v-if="contact?.telegram?.trim()" :href="contact.telegram.trim()" target="_blank" rel="noopener noreferrer" class="flex items-center gap-3 py-1.5 text-sm text-muted-foreground hover:text-primary"><Send class="h-5 w-5 shrink-0" /> Telegram</a>
+          <a v-if="contact?.whatsapp?.trim()" :href="contact.whatsapp.trim()" target="_blank" rel="noopener noreferrer" class="flex items-center gap-3 py-1.5 text-sm text-muted-foreground hover:text-primary"><MessageCircle class="h-5 w-5 shrink-0" /> WhatsApp</a>
+          <ContactCopyButton v-if="contact?.wechat?.trim()" kind="wechat" :value="contact.wechat.trim()" />
+          <ContactCopyButton v-if="contact?.qq?.trim()" kind="qq" :value="contact.qq.trim()" />
+          <ContactCopyButton v-if="contact?.email?.trim()" kind="email" :value="contact.email.trim()" />
         </div>
         <div>
           <h4 class="mb-3 text-sm font-bold">{{ t('vault.footer.legal') }}</h4>
