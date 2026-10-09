@@ -7,6 +7,7 @@ import { copyText } from '../utils/clipboard'
 const props = defineProps<{
   kind: 'wechat' | 'qq' | 'email'
   value: string
+  card?: boolean
 }>()
 
 const { t } = useI18n()
@@ -42,7 +43,8 @@ onUnmounted(() => {
       type="button"
       :aria-label="`${label}: ${value}`"
       :title="copied ? t('footer.copySuccess') : t('footer.copyContact', { name: label })"
-      class="group grid w-full min-w-0 grid-cols-[20px_minmax(0,1fr)_16px] items-center gap-x-2.5 rounded-sm py-1.5 text-left text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 motion-reduce:transition-none"
+      class="group grid w-full min-w-0 grid-cols-[20px_minmax(0,1fr)_16px] items-center gap-x-3 text-left text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 motion-reduce:transition-none"
+      :class="card ? 'rounded-lg border border-gray-100 bg-gray-50 p-3 hover:border-gray-200 hover:bg-gray-100 dark:border-white/5 dark:bg-white/5 dark:hover:border-white/10 dark:hover:bg-white/10' : 'rounded-sm py-1.5'"
       @click="handleCopy"
     >
       <svg v-if="kind === 'wechat'" viewBox="0 0 24 24" fill="currentColor" class="h-5 w-5 text-[#07c160]" aria-hidden="true">
@@ -54,7 +56,7 @@ onUnmounted(() => {
       <span v-else class="flex h-5 w-5 items-center justify-center rounded-full bg-[#4da6ff]">
         <Mail class="h-3 w-3 text-white" aria-hidden="true" />
       </span>
-      <span class="min-w-0 break-all leading-6">
+      <span class="min-w-0 break-all leading-5">
         <span>{{ label }}: </span><span class="font-semibold">{{ value }}</span>
       </span>
       <Check v-if="copied" class="h-4 w-4 text-emerald-500" aria-hidden="true" />
