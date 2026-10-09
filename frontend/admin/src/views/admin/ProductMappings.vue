@@ -437,7 +437,11 @@ const openImportModal = () => {
   showImportModal.value = true
 }
 
-const closeImportModal = () => { showImportModal.value = false }
+const closeImportModal = () => {
+  categoryCountsRequestId++
+  loadingCategoryCounts.value = false
+  showImportModal.value = false
+}
 
 const hasMoreUpstream = computed(() => upstreamProducts.value.length < upstreamTotal.value)
 
@@ -494,21 +498,25 @@ const fetchUpstreamCategories = async (connectionId: string) => {
 // 拉取分类下的真实商品数量（后端遍历全部上游分页统计），避免商品数量较多时
 // 部分分类的商品仍在未加载的分页中，导致分类列表里看不到、误以为“对接不全”
 // 统计要遍历上游全部分页，商品多时较慢，所以不参与列表的加载态。
+let categoryCountsRequestId = 0
 const fetchUpstreamCategoryCounts = async (connectionId: string) => {
+  const requestId = ++categoryCountsRequestId
   if (!connectionId) return
+  const isCurrentRequest = () => requestId === categoryCountsRequestId
+    && importConnectionId.value === connectionId && showImportModal.value
   loadingCategoryCounts.value = true
   categoryCountsFailed.value = false
   try {
     const res = await adminAPI.getUpstreamCategoryCounts({ connection_id: connectionId })
-    if (importConnectionId.value !== connectionId) return  // 已切换连接，丢弃过期结果
+    if (!isCurrentRequest()) return
     const counts = (res.data.data?.counts || {}) as Record<string, number>
     categoryProductCounts.value = new Map(Object.entries(counts).map(([k, v]) => [Number(k), v]))
   } catch {
-    if (importConnectionId.value !== connectionId) return
+    if (!isCurrentRequest()) return
     categoryProductCounts.value = null
     categoryCountsFailed.value = true
   } finally {
-    if (importConnectionId.value === connectionId) loadingCategoryCounts.value = false
+    if (isCurrentRequest()) loadingCategoryCounts.value = false
   }
 }
 
