@@ -613,7 +613,7 @@ func (s *Service) ListUpstreamCategories(connectionID uint) ([]upstream.Upstream
 
 // ListUpstreamCategoryCounts 拉取上游全部商品并按分类统计数量。
 // 管理端只加载首页商品用于预览，不代表分类下商品的真实数量，所以这里遍历全部分页。
-// ctx 取自请求：管理端关闭弹窗或切换连接后，剩余分页不再继续拉取。
+// ctx 取自请求：HTTP 请求取消后，剩余分页不再继续拉取。
 func (s *Service) ListUpstreamCategoryCounts(ctx context.Context, connectionID uint) (map[uint]int, int, error) {
 	conn, err := s.connections.GetByID(connectionID)
 	if err != nil {
