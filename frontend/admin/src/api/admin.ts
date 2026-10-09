@@ -583,6 +583,7 @@ export const adminAPI = {
   batchDeleteProductMappings: (ids: number[]) => api.post('/admin/product-mappings/batch-delete', { ids }),
   getUpstreamProducts: (params?: Record<string, unknown>) => api.get('/admin/upstream-products', { params }),
   getUpstreamCategories: (params: { connection_id: string }) => api.get('/admin/upstream-categories', { params }),
+  getUpstreamCategoryCounts: (params: { connection_id: string }) => api.get('/admin/upstream-category-counts', { params }),
   batchImportByCategory: (data: Record<string, unknown>) => api.post('/admin/product-mappings/batch-import-by-category', data),
   // Procurement Orders
   getProcurementOrders: (params?: Record<string, unknown>) => api.get('/admin/procurement-orders', { params }),
@@ -635,12 +636,6 @@ export const adminAPI = {
   deleteTelegramBroadcast: (id: number) => api.delete(`/admin/telegram-bot/broadcasts/${id}`),
   getTelegramBroadcastUsers: (params?: Record<string, unknown>) =>
     api.get('/admin/telegram-bot/users', { params }),
-
-  // 广告代理
-  renderAdSlot: (slotCode: string, params?: Record<string, string>) =>
-    api.get(`/admin/ads/render/${slotCode}`, { params }),
-  reportAdImpression: (data: { tenant: string; client: string; slot_code: string; items: { ad_id: number; impression_token: string }[] }) =>
-    api.post('/admin/ads/impression', data),
 
   // 文章分类
   getPostCategories: (params?: Record<string, unknown>) => api.get('/admin/post-categories', { params }),

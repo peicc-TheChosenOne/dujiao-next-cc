@@ -1,0 +1,9 @@
+# Enable with COMPOSE_FILE=compose.yml:compose.public.yml in the server .env.
+services:
+  postgres:
+    ports:
+      - 0.0.0.0:15432:5432
+
+  redis:
+    ports:
+      - 0.0.0.0:16379:6379

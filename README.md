@@ -172,7 +172,7 @@ On a fresh Ubuntu 22.04+ or Debian 12+ server, download and run the official
 interactive installer:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/dujiao-next/dujiao-next/main/scripts/dujiao-next-manager.sh \
+curl -fsSL https://raw.githubusercontent.com/peicc-TheChosenOne/dujiao-next-cc/codex/deploy-aiccpay/scripts/dujiao-next-manager.sh \
   -o /tmp/dujiao-next-manager.sh
 sudo bash /tmp/dujiao-next-manager.sh install
 ```
@@ -210,7 +210,7 @@ uninstall creates and verifies a `0600` recovery archive under
 
 ### Manual binary installation
 
-Download the latest `dujiao-next_*.tar.gz` from [Releases](https://github.com/dujiao-next/dujiao-next/releases):
+Download the latest `dujiao-next_*.tar.gz` from [Releases](https://github.com/peicc-TheChosenOne/dujiao-next-cc/releases):
 
 ```bash
 tar -xzf dujiao-next_*.tar.gz

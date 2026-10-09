@@ -1,6 +1,6 @@
 {
   "common": {
-    "siteName": "Dujiao-Next",
+    "siteName": "AI大玩家",
     "loading": "加载中...",
     "error": "错误",
     "success": "成功",
@@ -99,6 +99,11 @@
     "description": "专业的在线工作室，为您提供优质的产品和服务。",
     "quickLinks": "快速链接",
     "contact": "联系我们",
+    "wechat": "微信",
+    "email": "邮箱",
+    "copyContact": "点击复制{name}",
+    "copySuccess": "已复制到剪贴板",
+    "copyFailed": "复制失败，请手动复制",
     "rights": "保留所有权利",
     "terms": "服务条款",
     "privacy": "隐私政策"
@@ -112,7 +117,7 @@
   },
   "home": {
     "hero": {
-      "title": "Dujiao-Next · D&N",
+      "title": "AI大玩家",
       "subtitle": "专业的产品与服务提供商",
       "cta": "浏览商品",
       "badge": "新一代数字商店"

@@ -52,6 +52,8 @@ archives:
     files:
       - ./config.yml.example
       - ./README.md
+      - ./deploy/README.zh.md
+      - ./deploy/发布流程.zh.md
       - ./scripts/dujiao-next-manager.sh
     name_template: >-
       {{ .ProjectName }}_
@@ -99,5 +101,6 @@ release:
     ---
 
     ## 📚 Documentation（在线文档）
-    - [Installation Guide](https://dujiao-next.com/deploy/)
-    - [部署指南](https://dujiao-next.com/deploy/)
+    - [AI大玩家部署指南](https://github.com/peicc-TheChosenOne/dujiao-next-cc/blob/codex/deploy-aiccpay/deploy/README.zh.md)
+    - [版本发布与回滚流程](https://github.com/peicc-TheChosenOne/dujiao-next-cc/blob/codex/deploy-aiccpay/deploy/发布流程.zh.md)
+    - Release 包含前后台的多平台二进制；本仓库尚未发布 Docker 镜像。现有生产环境按发布标签源码构建镜像，不使用安装脚本更新 Compose 部署。

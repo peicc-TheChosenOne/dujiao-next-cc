@@ -31,10 +31,12 @@ type ListFilter struct {
 type Repository interface {
 	List(filter ListFilter) ([]productdomain.Product, int64, error)
 	GetBySlug(slug string, onlyActive bool) (*productdomain.Product, error)
+	GetBySlugUnscoped(slug string) (*productdomain.Product, error)
 	GetByID(id string) (*productdomain.Product, error)
 	GetAdminByID(id string) (*productdomain.Product, error)
 	ListByIDs(ids []uint) ([]productdomain.Product, error)
 	Create(item *productdomain.Product) error
+	Restore(item *productdomain.Product) error
 	Update(item *productdomain.Product) error
 	Delete(id string) error
 	CountBySlug(slug string, excludeID *string) (int64, error)

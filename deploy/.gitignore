@@ -1,0 +1,6 @@
+.env
+config/
+secrets/
+data/
+backups/
+tls/
