@@ -53,6 +53,8 @@ type ResellerSiteConfigForm = {
   support: {
     telegram: string
     whatsapp: string
+    wechat: string
+    qq: string
     email: string
     support_url: string
   }
@@ -128,6 +130,8 @@ const createBlankForm = (): ResellerSiteConfigForm => ({
   support: {
     telegram: '',
     whatsapp: '',
+    wechat: '',
+    qq: '',
     email: '',
     support_url: '',
   },
@@ -185,6 +189,8 @@ const normalizeConfigForForm = (row: AdminResellerSiteConfig): ResellerSiteConfi
     support: {
       telegram: String(support.telegram || ''),
       whatsapp: String(support.whatsapp || ''),
+      wechat: String(support.wechat || ''),
+      qq: String(support.qq || ''),
       email: String(support.email || ''),
       support_url: String(support.support_url || ''),
     },
@@ -212,6 +218,8 @@ const buildPayload = (): AdminResellerSiteConfigPayload => ({
   support: {
     telegram: form.support.telegram.trim(),
     whatsapp: form.support.whatsapp.trim(),
+    wechat: form.support.wechat.trim(),
+    qq: form.support.qq.trim(),
     email: form.support.email.trim(),
     support_url: form.support.support_url.trim(),
   },
@@ -523,6 +531,14 @@ onMounted(() => {
             <div class="grid gap-2">
               <Label>{{ t('admin.resellerSiteConfigs.fields.whatsapp') }}</Label>
               <Input v-model="form.support.whatsapp" />
+            </div>
+            <div class="grid gap-2">
+              <Label>{{ t('admin.resellerSiteConfigs.fields.wechat') }}</Label>
+              <Input v-model="form.support.wechat" />
+            </div>
+            <div class="grid gap-2">
+              <Label>{{ t('admin.resellerSiteConfigs.fields.qq') }}</Label>
+              <Input v-model="form.support.qq" />
             </div>
             <div class="grid gap-2">
               <Label>{{ t('admin.resellerSiteConfigs.fields.email') }}</Label>

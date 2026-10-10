@@ -102,6 +102,7 @@
     "wechat": "微信",
     "email": "邮箱",
     "copyContact": "点击复制{name}",
+    "supportLink": "联系客服",
     "copySuccess": "已复制到剪贴板",
     "copyFailed": "复制失败，请手动复制",
     "rights": "保留所有权利",
@@ -668,7 +669,7 @@
         },
         "descriptions": {
           "brand": "设置站点名称、Logo 与浏览器图标",
-          "support": "展示在站点的联系入口，留空则不显示",
+          "support": "展示本店铺的客服联系方式，留空则不显示",
           "seo": "搜索引擎与社交分享信息，可分语言填写",
           "announcement": "访客进入分销站首页时以弹窗展示的公告",
           "footer": "展示在页面底部的自定义链接",
@@ -738,12 +739,20 @@
           "addLink": "添加链接",
           "remove": "移除"
         },
+        "contactHints": {
+          "open": "点击后跳转",
+          "copy": "点击后复制"
+        },
         "fields": {
           "siteName": "站点名称",
           "logo": "Logo 地址",
           "favicon": "站点图标地址",
           "telegram": "Telegram",
           "whatsapp": "WhatsApp",
+          "wechat": "微信",
+          "wechatPlaceholder": "填写客服微信号",
+          "qq": "QQ号",
+          "qqPlaceholder": "例如：123456789",
           "email": "客服邮箱",
           "supportUrl": "客服链接",
           "announcementEnabled": "启用公告",

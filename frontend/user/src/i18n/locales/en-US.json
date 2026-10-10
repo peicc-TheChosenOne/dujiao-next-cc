@@ -102,6 +102,7 @@
     "wechat": "WeChat",
     "email": "Email",
     "copyContact": "Click to copy {name}",
+    "supportLink": "Contact support",
     "copySuccess": "Copied to clipboard",
     "copyFailed": "Copy failed. Please copy manually",
     "rights": "All rights reserved",
@@ -785,12 +786,20 @@
           "addLink": "Add Link",
           "remove": "Remove"
         },
+        "contactHints": {
+          "open": "Click to open",
+          "copy": "Click to copy"
+        },
         "fields": {
           "siteName": "Site Name",
           "logo": "Logo URL",
           "favicon": "Favicon URL",
           "telegram": "Telegram",
           "whatsapp": "WhatsApp",
+          "wechat": "WeChat",
+          "wechatPlaceholder": "Enter your support WeChat ID",
+          "qq": "QQ number",
+          "qqPlaceholder": "Example: 123456789",
           "email": "Support Email",
           "supportUrl": "Support URL",
           "announcementEnabled": "Enable Announcement",

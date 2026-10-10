@@ -265,6 +265,8 @@ export interface ResellerSiteConfigPayload {
     support?: {
         telegram?: string
         whatsapp?: string
+        wechat?: string
+        qq?: string
         email?: string
         support_url?: string
     }

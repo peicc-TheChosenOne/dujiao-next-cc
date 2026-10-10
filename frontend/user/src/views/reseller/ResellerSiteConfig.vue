@@ -35,7 +35,7 @@
         <div class="flex items-center justify-between gap-3">
           <div>
             <p class="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">{{ t('resellerConsole.site.cards.support') }}</p>
-            <div class="mt-2 text-lg font-black text-foreground">{{ supportChannelsReady }}/4</div>
+            <div class="mt-2 text-lg font-black text-foreground">{{ supportChannelsReady }}/{{ supportChannelKeys.length }}</div>
           </div>
           <span class="flex h-11 w-11 items-center justify-center rounded-xl bg-info/10 text-info">
             <LifeBuoy class="h-5 w-5" />
@@ -72,7 +72,7 @@
       </div>
     </Card>
 
-    <ResellerSiteConfigPanel :embedded="true" />
+    <ResellerSiteConfigPanel :embedded="true" @updated="siteSnapshot = $event" />
   </div>
 </template>
 
@@ -111,9 +111,10 @@ const primaryDomain = computed(() => {
 const primaryDomainUrl = computed(() => (primaryDomain.value ? `https://${primaryDomain.value}` : ''))
 const config = computed(() => siteSnapshot.value?.config || null)
 const siteName = computed(() => config.value?.site_name || '')
+const supportChannelKeys = ['telegram', 'wechat', 'qq', 'email', 'whatsapp', 'support_url'] as const
 const supportChannelsReady = computed(() => {
   const support = config.value?.support || {}
-  return ['telegram', 'whatsapp', 'email', 'support_url'].filter((key) => Boolean((support as Record<string, string | undefined>)[key])).length
+  return supportChannelKeys.filter((key) => Boolean(support[key]?.trim())).length
 })
 const readiness = computed(() => [
   { label: t('resellerConsole.site.readiness.brand'), done: Boolean(config.value?.site_name || config.value?.logo || config.value?.favicon) },

@@ -33,6 +33,8 @@ type ResellerAnnouncementInput struct {
 type ResellerSupportInput struct {
 	Telegram   string `json:"telegram"`
 	WhatsApp   string `json:"whatsapp"`
+	WeChat     string `json:"wechat"`
+	QQ         string `json:"qq"`
 	Email      string `json:"email"`
 	SupportURL string `json:"support_url"`
 }
@@ -170,7 +172,11 @@ func NormalizeResellerSupport(input ResellerSupportInput) (jsonmap.JSON, error) 
 	if err != nil {
 		return nil, newResellerFieldError("support_url")
 	}
-	return jsonmap.JSON{"telegram": telegram, "whatsapp": whatsApp, "email": email, "support_url": supportURL}, nil
+	return jsonmap.JSON{
+		"telegram": telegram, "whatsapp": whatsApp,
+		"wechat": trimLimit(input.WeChat, 100), "qq": trimLimit(input.QQ, 100),
+		"email": email, "support_url": supportURL,
+	}, nil
 }
 
 func normalizeResellerAnnouncement(input ResellerAnnouncementInput) jsonmap.JSON {
@@ -367,6 +373,8 @@ func (s *SiteConfigService) ApplyPublicConfigOverlay(ctx context.Context, tenant
 		"host":           tenant.Host,
 		"primary_domain": tenant.PrimaryDomain,
 	}
+	// Reseller contacts are independent, including before any site config is saved.
+	out["contact"] = map[string]interface{}{}
 	brand, _ := out["brand"].(map[string]interface{})
 	if brand == nil {
 		brand = map[string]interface{}{}
@@ -490,7 +498,7 @@ func applyResellerSiteConfigToPublicConfig(out map[string]interface{}, cfg *rese
 	if contact == nil {
 		contact = map[string]interface{}{}
 	}
-	for _, key := range []string{"telegram", "whatsapp", "email", "support_url"} {
+	for _, key := range []string{"telegram", "whatsapp", "wechat", "qq", "email", "support_url"} {
 		if value, ok := cfg.SupportJSON[key].(string); ok && strings.TrimSpace(value) != "" {
 			contact[key] = value
 		}

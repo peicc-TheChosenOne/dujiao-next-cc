@@ -73,6 +73,12 @@
             <ContactCopyButton v-if="config?.contact?.wechat?.trim()" card kind="wechat" :value="config.contact.wechat.trim()" />
             <ContactCopyButton v-if="config?.contact?.qq?.trim()" card kind="qq" :value="config.contact.qq.trim()" />
             <ContactCopyButton v-if="config?.contact?.email?.trim()" card kind="email" :value="config.contact.email.trim()" />
+            <a v-if="config?.contact?.support_url?.trim()" :href="config.contact.support_url.trim()" target="_blank"
+              rel="noopener noreferrer"
+              class="flex items-center space-x-3 text-sm hover:text-gray-900 dark:hover:text-white transition-colors p-3 rounded-lg bg-gray-50 dark:bg-white/5 hover:bg-gray-100 dark:hover:bg-white/10 border border-gray-100 dark:border-white/5 hover:border-gray-200 dark:hover:border-white/10">
+              <LifeBuoy class="h-5 w-5 shrink-0" />
+              <span>{{ t('footer.supportLink') }}</span>
+            </a>
           </div>
         </div>
       </div>
@@ -107,7 +113,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Home, LayoutGrid, Newspaper, Info } from 'lucide-vue-next'
+import { Home, LayoutGrid, Newspaper, Info, LifeBuoy } from 'lucide-vue-next'
 import { useAppStore } from '../stores/app'
 import { getImageUrl } from '../utils/image'
 import { getLocalizedText } from '../utils/resellerSiteConfig'

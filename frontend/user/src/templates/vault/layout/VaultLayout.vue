@@ -116,6 +116,7 @@
           <ContactCopyButton v-if="contact?.wechat?.trim()" kind="wechat" :value="contact.wechat.trim()" />
           <ContactCopyButton v-if="contact?.qq?.trim()" kind="qq" :value="contact.qq.trim()" />
           <ContactCopyButton v-if="contact?.email?.trim()" kind="email" :value="contact.email.trim()" />
+          <a v-if="contact?.support_url?.trim()" :href="contact.support_url.trim()" target="_blank" rel="noopener noreferrer" class="flex items-center gap-3 py-1.5 text-sm text-muted-foreground hover:text-primary"><LifeBuoy class="h-5 w-5 shrink-0" /> {{ t('footer.supportLink') }}</a>
         </div>
         <div>
           <h4 class="mb-3 text-sm font-bold">{{ t('vault.footer.legal') }}</h4>
@@ -139,7 +140,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   Search, Moon, Sun, ShoppingCart, Languages, Menu, X, User, Info, ClipboardList, LogOut,
-  LayoutGrid, Send, MessageCircle,
+  LayoutGrid, Send, MessageCircle, LifeBuoy,
 } from 'lucide-vue-next'
 import { useAppStore } from '../../../stores/app'
 import { useCartStore } from '../../../stores/cart'
@@ -213,7 +214,7 @@ const footerLinks = computed(() => {
     .filter((item) => item.name)
 })
 
-const contact = computed(() => appStore.config?.contact as { telegram?: string; whatsapp?: string; wechat?: string; qq?: string; email?: string } | undefined)
+const contact = computed(() => appStore.config?.contact as { telegram?: string; whatsapp?: string; wechat?: string; qq?: string; email?: string; support_url?: string } | undefined)
 
 const cartCount = computed(() => cartStore.totalItems)
 
