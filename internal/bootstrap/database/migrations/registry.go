@@ -116,6 +116,9 @@ func AutoMigrate() error {
 	if err := ensureProductSKUMigration(); err != nil {
 		return err
 	}
+	if err := ensureResellerSupplyMigration(); err != nil {
+		return err
+	}
 	if err := ensureManualStockRemainingMigration(); err != nil {
 		return err
 	}

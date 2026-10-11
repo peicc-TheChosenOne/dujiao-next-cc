@@ -7,6 +7,7 @@ import (
 
 	productdomain "github.com/dujiao-next/internal/modules/catalog/product/domain"
 
+	resellercontract "github.com/dujiao-next/internal/modules/reseller/contract"
 	"github.com/dujiao-next/internal/shared/jsonmap"
 )
 
@@ -165,6 +166,7 @@ type ResellerProductSettingProductResp struct {
 }
 
 type ResellerProductSettingSKUResp struct {
+	resellercontract.SupplyQuote
 	ID              uint                        `json:"id"`
 	SKUCode         string                      `json:"sku_code"`
 	SpecValues      jsonmap.JSON                `json:"spec_values"`
@@ -181,6 +183,7 @@ type ResellerProductSettingDetailResp struct {
 }
 
 type ResellerProductSettingDTOInput struct {
+	Profile          *resellerdomain.Profile
 	Product          productdomain.Product
 	Settings         []resellerdomain.ProductSetting
 	EffectiveBySKUID map[uint]string
@@ -408,7 +411,8 @@ func NewResellerProductSettingDetailResp(input ResellerProductSettingDTOInput) R
 			ID:              sku.ID,
 			SKUCode:         sku.SKUCode,
 			SpecValues:      sku.SpecValuesJSON,
-			BasePriceAmount: sku.PriceAmount.String(),
+			BasePriceAmount: supplyAmountString(sku),
+			SupplyQuote:     resellercontract.ResolveSupplyQuote(input.Profile, sku, productSetting, setting),
 			IsActive:        sku.IsActive,
 			Setting:         settingResp,
 			EffectivePrice:  input.EffectiveBySKUID[sku.ID],
@@ -626,4 +630,11 @@ func NewResellerDashboardResp(opened bool, profile *resellerdomain.Profile, bala
 		WithdrawEnabled:        withdrawEnabled,
 		WithdrawDisabledReason: withdrawDisabledReason,
 	}
+}
+
+func supplyAmountString(sku productdomain.ProductSKU) string {
+	if sku.SupplyPriceAmount == nil {
+		return ""
+	}
+	return sku.SupplyPriceAmount.String()
 }

@@ -487,6 +487,17 @@ const messages = {
       },
     },
     admin: {
+      supplyPricing: {
+        supply: '统一供货价',
+        minimum: '最低售价（选填）',
+        suggested: '建议售价（选填）',
+        description: '供货价留空时不对分销商销售；最低售价留空时，售价不能低于供货价。建议售价仅用于快速填写。',
+        invalid: '报价须为正金额，最多两位小数',
+        hidden: '商品级开关仅控制展示，售价按规格保存',
+        visibilityOnly: '仅控制商品展示',
+        floor: '最低售价',
+        maximum: '最高售价',
+      },
       brand: '管理后台',
       layout: {
         controlRoom: '控制台',
@@ -3979,7 +3990,7 @@ const messages = {
         },
         preview: {
           effectivePrice: '预计生效价',
-          priceInvalid: '售价需不低于基准价与成本价',
+          priceInvalid: '售价须符合供货价、最低售价与最高加价限制；未配置供货价时暂停销售',
           markupExceeded: '超出最高加价比例',
         },
         empty: '暂无分销商品配置',
@@ -4940,6 +4951,17 @@ const messages = {
       },
     },
     admin: {
+      supplyPricing: {
+        supply: '統一供貨價',
+        minimum: '最低售價（選填）',
+        suggested: '建議售價（選填）',
+        description: '供貨價留空時不對分銷商銷售；最低售價留空時，售價不能低於供貨價。建議售價僅用於快速填寫。',
+        invalid: '報價須為正金額，最多兩位小數',
+        hidden: '商品級開關僅控制展示，售價按規格儲存',
+        visibilityOnly: '僅控制商品展示',
+        floor: '最低售價',
+        maximum: '最高售價',
+      },
       brand: '管理後台',
       layout: {
         controlRoom: '控制台',
@@ -8432,7 +8454,7 @@ const messages = {
         },
         preview: {
           effectivePrice: '預計生效價',
-          priceInvalid: '售價需不低於基準價與成本價',
+          priceInvalid: '售價須符合供貨價、最低售價與最高加價限制；未設定供貨價時暫停銷售',
           markupExceeded: '超出最高加價比例',
         },
         empty: '暫無分銷商品配置',
@@ -9393,6 +9415,17 @@ const messages = {
       },
     },
     admin: {
+      supplyPricing: {
+        supply: 'Unified supply price',
+        minimum: 'Minimum retail price (optional)',
+        suggested: 'Suggested retail price (optional)',
+        description: 'An empty supply price disables reseller sales. An empty minimum requires retail at least equal to supply. Suggested prices only fill drafts.',
+        invalid: 'Enter a positive amount with at most two decimal places',
+        hidden: 'The product switch only controls visibility. Retail prices are saved per variant.',
+        visibilityOnly: 'Product visibility only',
+        floor: 'Minimum retail',
+        maximum: 'Maximum retail',
+      },
       brand: 'Admin',
       layout: {
         controlRoom: 'Control Panel',
@@ -12885,7 +12918,7 @@ const messages = {
         },
         preview: {
           effectivePrice: 'Effective Price',
-          priceInvalid: 'Price must be at least the base and cost price',
+          priceInvalid: 'Retail must meet the supply price, minimum retail and markup limits; sales pause without a supply price',
           markupExceeded: 'Exceeds the maximum markup',
         },
         empty: 'No reseller product configurations',

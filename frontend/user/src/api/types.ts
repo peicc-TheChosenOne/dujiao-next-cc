@@ -312,6 +312,18 @@ export interface ResellerProductSettingData {
 }
 
 export interface ResellerProductSettingSKUData {
+    supply_price_amount: string | null
+    min_sale_price_amount: string
+    max_sale_price_amount: string | null
+    suggested_sale_price_amount: string | null
+    sale_price_amount: string
+    draft_price_amount: string
+    profit_amount: string
+    price_valid: boolean
+    can_sell: boolean
+    error_code: string
+    pricing_revision: string
+
     id: number
     sku_code: string
     spec_values: Record<string, unknown>
@@ -338,11 +350,12 @@ export interface ResellerProductSettingDetailData {
 export interface ResellerProductSettingPayloadItem {
     sku_id: number
     is_listed: boolean
-    pricing_mode: ResellerPricingMode | string
-    markup_percent: string
-    fixed_markup_amount: string
-    fixed_price_amount: string
-    sort_order: number
+    pricing_mode?: ResellerPricingMode | string
+    markup_percent?: string
+    fixed_markup_amount?: string
+    fixed_price_amount?: string
+    sort_order?: number
+    pricing_revision?: string
 }
 
 export interface ResellerProductSettingUpdatePayload {

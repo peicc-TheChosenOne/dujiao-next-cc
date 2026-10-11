@@ -151,12 +151,22 @@ func (s *WriteService) Create(input CreateProductInput) (*productdomain.Product,
 		} else if err := productRepo.Create(&product); err != nil {
 			return err
 		}
+		if locker, ok := skuRepo.(interface{ LockProduct(uint) error }); ok {
+			if err := locker.LockProduct(product.ID); err != nil {
+				return err
+			}
+		}
 		if len(normalizedSKUs) > 0 {
 			if err := s.applyProductSKUsWithStockGuard(skuRepo, cardSecretRepo, product.ID, fulfillmentType, normalizedSKUs); err != nil {
 				return err
 			}
 		} else if err := s.syncSingleProductSKU(skuRepo, cardSecretRepo, product.ID, fulfillmentType, priceAmount, costPriceAmount, manualStockTotal); err != nil {
 			return err
+		}
+		if len(input.SKUs) == 0 {
+			if err := s.saveSingleSupplyQuote(skuRepo, product.ID, input); err != nil {
+				return err
+			}
 		}
 		if input.WholesalePrices != nil {
 			var skus []productdomain.ProductSKU

@@ -160,7 +160,7 @@ const applyDetailToEditor = (source: AdminResellerProductSettingDetail) => {
   productForm.value = formFromRule(source.product_setting, 0)
   clearSkuForms()
   source.skus.forEach((sku) => {
-    skuForms[sku.id] = formFromRule(sku.setting, sku.id)
+    skuForms[sku.id] = { ...formFromRule(sku.setting, sku.id), pricing_mode: RESELLER_PRICING_MODE_FIXED_PRICE, is_listed: sku.setting?.is_listed === true, fixed_price_amount: sku.setting ? sku.sale_price_amount : sku.draft_price_amount, pricing_revision: sku.pricing_revision }
   })
   seedPreviewFromDetail(source)
   schedulePreview()
@@ -214,8 +214,14 @@ watch(
 
 const buildPayload = () => ({
   settings: [
-    productForm.value,
-    ...(detail.value?.skus || []).map((sku) => skuFormFor(sku.id)),
+    { sku_id: 0, is_listed: productForm.value.is_listed },
+    ...(detail.value?.skus || []).flatMap((sku) => {
+      const form = skuFormFor(sku.id)
+      const initialPrice = sku.setting ? sku.sale_price_amount : sku.draft_price_amount
+      if (form.fixed_price_amount === initialPrice && form.is_listed === (sku.setting?.is_listed === true)) return []
+      if (!form.is_listed && (['supply_missing', 'supply_below_cost', 'range_conflict'].includes(sku.error_code) || form.fixed_price_amount === initialPrice)) return [{ sku_id: sku.id, is_listed: false }]
+      return [{ sku_id: sku.id, is_listed: form.is_listed, pricing_mode: RESELLER_PRICING_MODE_FIXED_PRICE, fixed_price_amount: form.fixed_price_amount, pricing_revision: form.pricing_revision }]
+    }),
   ],
 })
 
@@ -476,7 +482,7 @@ onMounted(() => {
                   {{ item.is_listed ? t('admin.resellerProductSettings.status.listed') : t('admin.resellerProductSettings.status.hidden') }}
                 </span>
               </TableCell>
-              <TableCell class="px-6 py-4 text-sm text-foreground">{{ pricingModeLabel(item.pricing_mode) }}</TableCell>
+              <TableCell class="px-6 py-4 text-sm text-foreground">{{ item.sku_id ? pricingModeLabel(item.pricing_mode) : t('admin.supplyPricing.visibilityOnly') }}</TableCell>
               <TableCell class="px-6 py-4 font-mono text-sm text-muted-foreground">{{ pricingValue(item) }}</TableCell>
               <TableCell class="px-6 py-4 text-sm text-muted-foreground">{{ formatDate(item.updated_at) }}</TableCell>
               <TableCell class="px-6 py-4">
@@ -524,7 +530,7 @@ onMounted(() => {
               <h2 class="text-sm font-semibold text-foreground">{{ t('admin.resellerProductSettings.columns.product') }}</h2>
               <span class="text-xs text-muted-foreground">#{{ detail.product.id }} / {{ detail.product.slug }}</span>
             </div>
-            <div class="grid gap-3 lg:grid-cols-[minmax(180px,1fr)_120px_170px_repeat(3,minmax(120px,1fr))_minmax(150px,170px)] lg:items-end">
+            <div class="grid gap-3 lg:grid-cols-3 lg:items-end">
               <div>
                 <Label>{{ t('admin.resellerProductSettings.columns.product') }}</Label>
                 <div class="mt-2 rounded-md border border-border bg-muted/30 px-3 py-2 text-sm text-foreground">
@@ -537,39 +543,7 @@ onMounted(() => {
                   <Switch v-model="productForm.is_listed" />
                 </div>
               </div>
-              <div>
-                <Label>{{ t('admin.resellerProductSettings.columns.pricingMode') }}</Label>
-                <Select v-model="productForm.pricing_mode">
-                  <SelectTrigger class="mt-2 h-9 w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem v-for="mode in pricingModes" :key="mode" :value="mode">{{ pricingModeLabel(mode) }}</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>{{ t('admin.resellerProductSettings.modes.markupPercent') }}</Label>
-                <Input v-model="productForm.markup_percent" class="mt-2 h-9 font-mono" />
-              </div>
-              <div>
-                <Label>{{ t('admin.resellerProductSettings.modes.fixedMarkup') }}</Label>
-                <Input v-model="productForm.fixed_markup_amount" class="mt-2 h-9 font-mono" />
-              </div>
-              <div>
-                <Label>{{ t('admin.resellerProductSettings.modes.fixedPrice') }}</Label>
-                <Input v-model="productForm.fixed_price_amount" class="mt-2 h-9 font-mono" />
-              </div>
-              <div>
-                <Label>{{ t('admin.resellerProductSettings.preview.effectivePrice') }}</Label>
-                <div
-                  class="mt-2 rounded-md border px-3 py-2 font-mono text-sm"
-                  :class="previewInvalidFor(0) ? 'border-destructive/40 bg-destructive/5 text-destructive' : 'border-border bg-muted/30 text-foreground'"
-                >
-                  {{ previewEffectiveFor(0, '-') }}
-                </div>
-                <p v-if="previewInvalidFor(0)" class="mt-1 text-xs text-destructive">{{ previewHintFor(0) }}</p>
-              </div>
+              <p class="text-xs text-muted-foreground">{{ t('admin.supplyPricing.hidden') }}</p>
             </div>
           </section>
 
@@ -579,7 +553,7 @@ onMounted(() => {
               <div
                 v-for="sku in detail.skus"
                 :key="sku.id"
-                class="grid gap-3 rounded-md border border-border p-3 lg:grid-cols-[minmax(180px,1fr)_120px_170px_repeat(3,minmax(120px,1fr))_minmax(150px,170px)] lg:items-end"
+                class="grid gap-3 rounded-md border border-border p-3 lg:grid-cols-5 lg:items-end"
               >
                 <div>
                   <Label>{{ t('admin.resellerProductSettings.columns.sku') }}</Label>
@@ -594,23 +568,9 @@ onMounted(() => {
                   </div>
                 </div>
                 <div>
-                  <Label>{{ t('admin.resellerProductSettings.columns.pricingMode') }}</Label>
-                  <Select :model-value="skuFormFor(sku.id).pricing_mode" @update:modelValue="(value) => updateSkuForm(sku.id, { ...skuFormFor(sku.id), pricing_mode: String(value) })">
-                    <SelectTrigger class="mt-2 h-9 w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem v-for="mode in pricingModes" :key="mode" :value="mode">{{ pricingModeLabel(mode) }}</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label>{{ t('admin.resellerProductSettings.modes.markupPercent') }}</Label>
-                  <Input :model-value="skuFormFor(sku.id).markup_percent" class="mt-2 h-9 font-mono" @update:modelValue="(value) => updateSkuForm(sku.id, { ...skuFormFor(sku.id), markup_percent: String(value) })" />
-                </div>
-                <div>
-                  <Label>{{ t('admin.resellerProductSettings.modes.fixedMarkup') }}</Label>
-                  <Input :model-value="skuFormFor(sku.id).fixed_markup_amount" class="mt-2 h-9 font-mono" @update:modelValue="(value) => updateSkuForm(sku.id, { ...skuFormFor(sku.id), fixed_markup_amount: String(value) })" />
+                  <Label>{{ t('admin.supplyPricing.supply') }}</Label>
+                  <div class="mt-2 rounded-md border bg-muted/30 px-3 py-2 font-mono text-sm">{{ sku.supply_price_amount || '-' }}</div>
+                  <p v-if="sku.supply_price_amount" class="mt-1 text-xs text-muted-foreground">{{ t('admin.supplyPricing.floor') }} {{ sku.min_sale_price_amount }}<span v-if="sku.max_sale_price_amount"> · {{ t('admin.supplyPricing.maximum') }} {{ sku.max_sale_price_amount }}</span></p>
                 </div>
                 <div>
                   <Label>{{ t('admin.resellerProductSettings.modes.fixedPrice') }}</Label>

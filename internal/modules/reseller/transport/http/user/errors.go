@@ -67,6 +67,7 @@ func isUploadValidationError(err error) bool {
 }
 
 var userProductSettingErrorRules = []mappedError{
+	{target: resellermodule.ErrPricingChanged, code: response.CodeBadRequest, key: "error.reseller_pricing_changed"},
 	{target: resellermodule.ErrNotOpened, code: response.CodeBadRequest, key: "error.bad_request"},
 	{target: resellermodule.ErrProfileInactive, code: response.CodeBadRequest, key: "error.forbidden"},
 	{target: productcontract.ErrProductSKUInvalid, code: response.CodeBadRequest, key: "error.order_item_invalid"},

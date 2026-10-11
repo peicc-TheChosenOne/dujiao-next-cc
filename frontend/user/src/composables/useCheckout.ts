@@ -811,7 +811,12 @@ export function useCheckout() {
 
     submitting.value = true
     try {
+      const previousRevision = preview.value?.pricing_revision
       await loadPreviewNow()
+      if (previousRevision && previousRevision !== preview.value?.pricing_revision) {
+        error.value = t("supplyPricing.changed")
+        return
+      }
       if (previewError.value) {
         error.value = previewError.value
         return
@@ -819,6 +824,7 @@ export function useCheckout() {
 
       const payload = {
         ...buildOrderPayload(),
+        pricing_revision: preview.value?.pricing_revision || "",
         channel_id: requiresOnlineChannel.value ? (selectedChannelId.value || undefined) : undefined,
         use_balance: useBalance.value,
       }

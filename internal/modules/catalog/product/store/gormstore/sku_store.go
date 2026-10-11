@@ -11,6 +11,7 @@ import (
 	"github.com/dujiao-next/internal/persistence/gormutil"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // SKUStore 是 Catalog Product SKU 端口的 GORM 实现。
@@ -116,7 +117,16 @@ func (r *SKUStore) Update(item *productdomain.ProductSKU) error {
 	if item == nil {
 		return errors.New("sku is nil")
 	}
-	return r.db.Save(item).Error
+	return r.db.Omit("SupplyPriceAmount", "MinSalePriceAmount", "SuggestedSalePriceAmount").Save(item).Error
+}
+
+// UpdateSupplyQuote writes only the manually managed reseller quote.
+func (r *SKUStore) UpdateSupplyQuote(item *productdomain.ProductSKU) error {
+	return r.db.Model(&productdomain.ProductSKU{}).Where("id = ? AND deleted_at IS NULL", item.ID).Updates(map[string]interface{}{
+		"supply_price_amount":         item.SupplyPriceAmount,
+		"min_sale_price_amount":       item.MinSalePriceAmount,
+		"suggested_sale_price_amount": item.SuggestedSalePriceAmount,
+	}).Error
 }
 
 // Delete 硬删除单个 SKU（绕过软删除，避免唯一索引冲突）
@@ -157,4 +167,13 @@ func (r *SKUStore) ReleaseManualStock(skuID uint, quantity int) (int64, error) {
 // ConsumeManualStock 消耗手动库存（支付成功后占用转已售）
 func (r *SKUStore) ConsumeManualStock(skuID uint, quantity int) (int64, error) {
 	return gormutil.ConsumeManualStock(r.db, &productdomain.ProductSKU{}, skuID, quantity)
+}
+
+func (r *SKUStore) LockProduct(productID uint) error {
+	var product productdomain.Product
+	if err := r.db.Clauses(clause.Locking{Strength: "UPDATE"}).Where("deleted_at IS NULL").First(&product, productID).Error; err != nil {
+		return err
+	}
+	var rows []productdomain.ProductSKU
+	return r.db.Clauses(clause.Locking{Strength: "UPDATE"}).Where("product_id = ? AND deleted_at IS NULL", productID).Order("id ASC").Find(&rows).Error
 }

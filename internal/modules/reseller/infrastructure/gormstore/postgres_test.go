@@ -2,6 +2,8 @@ package gormstore
 
 import (
 	"fmt"
+	categorydomain "github.com/dujiao-next/internal/modules/catalog/category/domain"
+	productdomain "github.com/dujiao-next/internal/modules/catalog/product/domain"
 	"os"
 	"strings"
 	"testing"
@@ -106,5 +108,85 @@ func TestResellerRepositoryPostgresWithdrawLocksSameRows(t *testing.T) {
 		return nil
 	}); err != nil {
 		t.Fatalf("transaction failed: %v", err)
+	}
+}
+
+func TestResellerSupplyQuotePostgresLocksAndPreservesConcurrentQuote(t *testing.T) {
+	dsn := os.Getenv("TEST_POSTGRES_DSN")
+	if dsn == "" {
+		t.Skip("TEST_POSTGRES_DSN is empty")
+	}
+	base, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	schema := fmt.Sprintf("supply_lock_%d", time.Now().UnixNano())
+	if err := base.Exec("CREATE SCHEMA " + schema).Error; err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { base.Exec("DROP SCHEMA " + schema + " CASCADE"); conn, _ := base.DB(); conn.Close() })
+	db, err := gorm.Open(postgres.Open(dsn+" search_path="+schema), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn, _ := db.DB()
+	conn.SetMaxOpenConns(3)
+	t.Cleanup(func() { conn.Close() })
+	if err := db.AutoMigrate(&userdomain.User{}, &resellerdomain.Profile{}, &categorydomain.Category{}, &productdomain.Product{}, &productdomain.ProductSKU{}, &resellerdomain.ProductSetting{}); err != nil {
+		t.Fatal(err)
+	}
+	profile := seedResellerProfile(t, db, "supply-lock@example.test")
+	product, skus := seedResellerPricingProduct(t, db, "lock-product", 1)
+	locked := make(chan struct{})
+	release := make(chan struct{})
+	firstDone := make(chan error, 1)
+	go func() {
+		firstDone <- db.Transaction(func(tx *gorm.DB) error {
+			if err := New(tx).LockPricingInputs(profile.ID, []uint{product.ID}); err != nil {
+				return err
+			}
+			close(locked)
+			<-release
+			return nil
+		})
+	}()
+	select {
+	case <-locked:
+	case err := <-firstDone:
+		t.Fatal(err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("lock timeout")
+	}
+	started := make(chan struct{})
+	writeDone := make(chan error, 1)
+	go func() {
+		close(started)
+		writeDone <- db.Model(&productdomain.ProductSKU{}).Where("id = ?", skus[0].ID).Update("supply_price_amount", "110.00").Error
+	}()
+	<-started
+	select {
+	case err := <-writeDone:
+		close(release)
+		t.Fatal("quote write escaped pricing lock", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(release)
+	if err := <-firstDone; err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-writeDone:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("quote write remained blocked")
+	}
+	var stored productdomain.ProductSKU
+	if err := db.First(&stored, skus[0].ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if stored.SupplyPriceAmount == nil || stored.SupplyPriceAmount.String() != "110.00" {
+		t.Fatal(stored)
 	}
 }

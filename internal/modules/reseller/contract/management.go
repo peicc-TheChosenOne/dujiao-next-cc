@@ -117,6 +117,7 @@ type ProductSettingSummary struct {
 // WithinTransaction 不得向用例暴露具体数据库连接类型。
 type ProductSettingStore interface {
 	WithinProductSettingTransaction(fn func(store ProductSettingStore) error) error
+	LockPricingInputs(resellerID uint, productIDs []uint) error
 	GetProfileByUserID(userID uint) (*resellerdomain.Profile, error)
 	GetProfileByID(id uint) (*resellerdomain.Profile, error)
 	ListProductsWithSettings(filter ProductSettingListFilter) ([]ProductSettingProductRow, int64, error)

@@ -109,15 +109,16 @@ func seedResellerPublicProduct(t *testing.T, db *gorm.DB, categoryID uint, slug 
 	skus := make([]productdomain.ProductSKU, 0, skuCount)
 	for i := 0; i < skuCount; i++ {
 		sku := productdomain.ProductSKU{
-			ProductID:        product.ID,
-			SKUCode:          fmt.Sprintf("%s-sku-%d", slug, i+1),
-			PriceAmount:      money.FromDecimal(decimal.NewFromInt(int64(100 + i))),
-			CostPriceAmount:  money.FromDecimal(decimal.NewFromInt(50)),
-			ManualStockTotal: constants.ManualStockUnlimited,
-			IsActive:         true,
-			SortOrder:        skuCount - i,
-			CreatedAt:        time.Now(),
-			UpdatedAt:        time.Now(),
+			ProductID:         product.ID,
+			SKUCode:           fmt.Sprintf("%s-sku-%d", slug, i+1),
+			PriceAmount:       money.FromDecimal(decimal.NewFromInt(int64(100 + i))),
+			CostPriceAmount:   money.FromDecimal(decimal.NewFromInt(50)),
+			SupplyPriceAmount: publicSupplyPointer(),
+			ManualStockTotal:  constants.ManualStockUnlimited,
+			IsActive:          true,
+			SortOrder:         skuCount - i,
+			CreatedAt:         time.Now(),
+			UpdatedAt:         time.Now(),
 		}
 		if err := db.Create(&sku).Error; err != nil {
 			t.Fatalf("create sku %s failed: %v", sku.SKUCode, err)
@@ -159,7 +160,7 @@ func TestProductServiceListPublicForTenantExcludesResellerHiddenProductsBeforePa
 		t.Fatalf("create profile failed: %v", err)
 	}
 
-	visible, _ := seedResellerPublicProduct(t, db, category.ID, "visible", 1)
+	visible, visibleSKUs := seedResellerPublicProduct(t, db, category.ID, "visible", 1)
 	productHidden, _ := seedResellerPublicProduct(t, db, category.ID, "product-hidden", 1)
 	allSKUHidden, allHiddenSKUs := seedResellerPublicProduct(t, db, category.ID, "all-sku-hidden", 2)
 	partialSKUHidden, partialHiddenSKUs := seedResellerPublicProduct(t, db, category.ID, "partial-sku-hidden", 2)
@@ -169,6 +170,10 @@ func TestProductServiceListPublicForTenantExcludesResellerHiddenProductsBeforePa
 		createResellerPublicSetting(t, db, resellerdomain.ProductSetting{ResellerID: profile.ID, ProductID: allSKUHidden.ID, SKUID: sku.ID, IsListed: false, PricingMode: resellerdomain.PricingModeInherit})
 	}
 	createResellerPublicSetting(t, db, resellerdomain.ProductSetting{ResellerID: profile.ID, ProductID: partialSKUHidden.ID, SKUID: partialHiddenSKUs[0].ID, IsListed: false, PricingMode: resellerdomain.PricingModeInherit})
+
+	for _, sku := range []productdomain.ProductSKU{visibleSKUs[0], partialHiddenSKUs[1]} {
+		createResellerPublicSetting(t, db, resellerdomain.ProductSetting{ResellerID: profile.ID, ProductID: sku.ProductID, SKUID: sku.ID, IsListed: true, PricingMode: resellerdomain.PricingModeFixedPrice, FixedPriceAmount: money.FromDecimal(decimal.NewFromInt(130))})
+	}
 
 	tenant := reseller.ResellerTenantContext("shop.example.test", profile.ID, owner.ID, "shop.example.test")
 	rows, total, err := svc.Read.ListPublicForTenant(tenant, resellerRepo, "", "", 1, 20)
@@ -210,3 +215,5 @@ func TestProductServiceGetPublicBySlugForTenantRejectsHiddenProduct(t *testing.T
 		t.Fatalf("expected productcontract.ErrNotFound for hidden detail, got %v", err)
 	}
 }
+
+func publicSupplyPointer() *money.Amount { a := money.FromDecimal(decimal.NewFromInt(100)); return &a }

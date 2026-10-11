@@ -135,14 +135,17 @@ func pickSingleModeTargetSKUIndex(skus []productdomain.ProductSKU) int {
 }
 
 type normalizedProductSKU struct {
-	ID               uint
-	SKUCode          string
-	SpecValuesJSON   jsonmap.JSON
-	PriceAmount      money.Amount
-	CostPriceAmount  money.Amount
-	ManualStockTotal int
-	IsActive         bool
-	SortOrder        int
+	ID                       uint
+	SKUCode                  string
+	SpecValuesJSON           jsonmap.JSON
+	PriceAmount              money.Amount
+	CostPriceAmount          money.Amount
+	SupplyPriceAmount        money.OptionalAmount
+	MinSalePriceAmount       money.OptionalAmount
+	SuggestedSalePriceAmount money.OptionalAmount
+	ManualStockTotal         int
+	IsActive                 bool
+	SortOrder                int
 }
 
 func (s *WriteService) normalizeProductSKUInputs(inputs []ProductSKUInput, fulfillmentType string, existingSKUMap map[uint]productdomain.ProductSKU) ([]normalizedProductSKU, decimal.Decimal, int, error) {
@@ -200,14 +203,17 @@ func (s *WriteService) normalizeProductSKUInputs(inputs []ProductSKUInput, fulfi
 		}
 
 		normalized = append(normalized, normalizedProductSKU{
-			ID:               input.ID,
-			SKUCode:          skuCode,
-			SpecValuesJSON:   specValues,
-			PriceAmount:      money.FromDecimal(priceAmount),
-			CostPriceAmount:  money.FromDecimal(costPriceAmount),
-			ManualStockTotal: manualTotal,
-			IsActive:         isActive,
-			SortOrder:        input.SortOrder,
+			ID:                       input.ID,
+			SKUCode:                  skuCode,
+			SpecValuesJSON:           specValues,
+			PriceAmount:              money.FromDecimal(priceAmount),
+			CostPriceAmount:          money.FromDecimal(costPriceAmount),
+			SupplyPriceAmount:        input.SupplyPriceAmount,
+			MinSalePriceAmount:       input.MinSalePriceAmount,
+			SuggestedSalePriceAmount: input.SuggestedSalePriceAmount,
+			ManualStockTotal:         manualTotal,
+			IsActive:                 isActive,
+			SortOrder:                input.SortOrder,
 		})
 
 		if isActive {
@@ -288,11 +294,19 @@ func (s *WriteService) applyProductSKUsWithStockGuard(
 			existing.SpecValuesJSON = row.SpecValuesJSON
 			existing.PriceAmount = row.PriceAmount
 			existing.CostPriceAmount = row.CostPriceAmount
+			if err := applySupplyQuote(&existing, row.SupplyPriceAmount, row.MinSalePriceAmount, row.SuggestedSalePriceAmount); err != nil {
+				return err
+			}
 			existing.ManualStockTotal = row.ManualStockTotal
 			existing.IsActive = row.IsActive
 			existing.SortOrder = row.SortOrder
 			if err := skuRepo.Update(&existing); err != nil {
 				return err
+			}
+			if row.SupplyPriceAmount.Set || row.MinSalePriceAmount.Set || row.SuggestedSalePriceAmount.Set {
+				if err := persistSupplyQuote(skuRepo, &existing); err != nil {
+					return err
+				}
 			}
 			kept[existing.ID] = struct{}{}
 			existingByCode[strings.ToLower(strings.TrimSpace(existing.SKUCode))] = existing
@@ -304,11 +318,19 @@ func (s *WriteService) applyProductSKUsWithStockGuard(
 			existing.SpecValuesJSON = row.SpecValuesJSON
 			existing.PriceAmount = row.PriceAmount
 			existing.CostPriceAmount = row.CostPriceAmount
+			if err := applySupplyQuote(&existing, row.SupplyPriceAmount, row.MinSalePriceAmount, row.SuggestedSalePriceAmount); err != nil {
+				return err
+			}
 			existing.ManualStockTotal = row.ManualStockTotal
 			existing.IsActive = row.IsActive
 			existing.SortOrder = row.SortOrder
 			if err := skuRepo.Update(&existing); err != nil {
 				return err
+			}
+			if row.SupplyPriceAmount.Set || row.MinSalePriceAmount.Set || row.SuggestedSalePriceAmount.Set {
+				if err := persistSupplyQuote(skuRepo, &existing); err != nil {
+					return err
+				}
 			}
 			kept[existing.ID] = struct{}{}
 			continue
@@ -329,6 +351,9 @@ func (s *WriteService) applyProductSKUsWithStockGuard(
 			ManualStockSold:   0,
 			IsActive:          row.IsActive,
 			SortOrder:         row.SortOrder,
+		}
+		if err := applySupplyQuote(&item, row.SupplyPriceAmount, row.MinSalePriceAmount, row.SuggestedSalePriceAmount); err != nil {
+			return err
 		}
 		if err := skuRepo.Create(&item); err != nil {
 			return err

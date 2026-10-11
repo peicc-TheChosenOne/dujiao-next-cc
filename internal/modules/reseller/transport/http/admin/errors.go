@@ -33,6 +33,8 @@ func respondAdminProductSettingError(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, productcontract.ErrNotFound):
 		ginutil.RespondError(c, response.CodeNotFound, "error.not_found", nil)
+	case errors.Is(err, resellercontract.ErrPricingChanged):
+		ginutil.RespondError(c, response.CodeBadRequest, "error.reseller_pricing_changed", nil)
 	case errors.Is(err, resellercontract.ErrProfileInactive):
 		ginutil.RespondError(c, response.CodeBadRequest, "error.bad_request", nil)
 	case errors.Is(err, productcontract.ErrProductSKUInvalid):

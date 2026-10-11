@@ -146,12 +146,22 @@ func (s *WriteService) Update(id string, input CreateProductInput) (*productdoma
 		productRepo := repositories.Products
 		skuRepo := repositories.SKUs
 		cardSecretRepo := repositories.CardSecrets
+		if locker, ok := skuRepo.(interface{ LockProduct(uint) error }); ok {
+			if err := locker.LockProduct(product.ID); err != nil {
+				return err
+			}
+		}
 		if len(normalizedSKUs) > 0 {
 			if err := s.applyProductSKUsWithStockGuard(skuRepo, cardSecretRepo, product.ID, fulfillmentType, normalizedSKUs); err != nil {
 				return err
 			}
 		} else if err := s.syncSingleProductSKU(skuRepo, cardSecretRepo, product.ID, fulfillmentType, priceAmount, product.CostPriceAmount.Decimal, product.ManualStockTotal); err != nil {
 			return err
+		}
+		if len(input.SKUs) == 0 {
+			if err := s.saveSingleSupplyQuote(skuRepo, product.ID, input); err != nil {
+				return err
+			}
 		}
 		// SKU 落库之后才处理批发价：此时的规格集合才是最终形态。
 		var skus []productdomain.ProductSKU

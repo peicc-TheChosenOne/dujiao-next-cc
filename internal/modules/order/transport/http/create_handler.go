@@ -59,6 +59,7 @@ type OrderPaymentCreator interface {
 
 // CreateOrderAndPayRequest 创建订单并发起支付请求
 type CreateOrderAndPayRequest struct {
+	PricingRevision     string                  `json:"pricing_revision"`
 	Items               []OrderItemRequest      `json:"items" binding:"required"`
 	CouponCode          string                  `json:"coupon_code"`
 	AffiliateCode       string                  `json:"affiliate_code"`
@@ -70,6 +71,7 @@ type CreateOrderAndPayRequest struct {
 
 // CreateGuestOrderAndPayRequest 游客创建订单并发起支付请求
 type CreateGuestOrderAndPayRequest struct {
+	PricingRevision     string                            `json:"pricing_revision"`
 	Email               string                            `json:"email" binding:"required"`
 	OrderPassword       string                            `json:"order_password" binding:"required"`
 	Items               []OrderItemRequest                `json:"items" binding:"required"`
@@ -118,6 +120,7 @@ func (h *CreateHandler) CreateOrder(c *gin.Context) {
 		AffiliateVisitorKey: req.AffiliateVisitorKey,
 		ClientIP:            c.ClientIP(),
 		ManualFormData:      req.ManualFormData,
+		PricingRevision:     req.PricingRevision,
 	})
 	if err != nil {
 		respondUserOrderCreateError(c, err)
@@ -151,6 +154,7 @@ func (h *CreateHandler) CreateGuestOrder(c *gin.Context) {
 		AffiliateVisitorKey: req.AffiliateVisitorKey,
 		ClientIP:            c.ClientIP(),
 		ManualFormData:      req.ManualFormData,
+		PricingRevision:     req.PricingRevision,
 	})
 	if err != nil {
 		respondGuestOrderCreateError(c, err)
@@ -183,6 +187,7 @@ func (h *CreateHandler) CreateOrderAndPay(c *gin.Context) {
 		AffiliateVisitorKey: req.AffiliateVisitorKey,
 		ClientIP:            c.ClientIP(),
 		ManualFormData:      req.ManualFormData,
+		PricingRevision:     req.PricingRevision,
 	})
 	if err != nil {
 		respondUserOrderCreateError(c, err)
@@ -225,6 +230,7 @@ func (h *CreateHandler) CreateGuestOrderAndPay(c *gin.Context) {
 		AffiliateVisitorKey: req.AffiliateVisitorKey,
 		ClientIP:            c.ClientIP(),
 		ManualFormData:      req.ManualFormData,
+		PricingRevision:     req.PricingRevision,
 	})
 	if err != nil {
 		respondGuestOrderCreateError(c, err)

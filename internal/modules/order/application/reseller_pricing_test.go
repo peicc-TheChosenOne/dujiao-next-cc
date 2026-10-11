@@ -71,13 +71,14 @@ func testOrderBuildResult(items ...struct {
 }) *orderBuildResult {
 	plans := make([]childOrderPlan, 0, len(items))
 	for _, item := range items {
-		product := &productdomain.Product{ID: item.productID, TitleJSON: jsonmap.JSON{"zh-CN": fmt.Sprintf("p%d", item.productID)}}
+		product := &productdomain.Product{IsActive: true, ID: item.productID, TitleJSON: jsonmap.JSON{"zh-CN": fmt.Sprintf("p%d", item.productID)}}
 		sku := &productdomain.ProductSKU{
-			ID:              item.skuID,
-			ProductID:       item.productID,
-			PriceAmount:     money.FromDecimal(item.base),
-			CostPriceAmount: money.FromDecimal(item.cost),
-			IsActive:        true,
+			ID:                item.skuID,
+			ProductID:         item.productID,
+			PriceAmount:       money.FromDecimal(item.base),
+			CostPriceAmount:   money.FromDecimal(item.cost),
+			SupplyPriceAmount: amountPointer(item.base),
+			IsActive:          true,
 		}
 		baseTotal := item.base.Mul(decimal.NewFromInt(int64(item.quantity))).Round(2)
 		orderItem := orderdomain.OrderItem{
@@ -140,7 +141,7 @@ func TestResellerPricingResolverMainTenantNoop(t *testing.T) {
 	}
 }
 
-func TestResellerPricingResolverAppliesPriorityAndDefaultMarkup(t *testing.T) {
+func TestResellerPricingResolverAppliesSavedPricesAndSupplyMargins(t *testing.T) {
 	repo := &resellerPricingRepoStub{
 		profile: testResellerProfile(),
 		settings: []resellerdomain.ProductSetting{
@@ -175,6 +176,11 @@ func TestResellerPricingResolverAppliesPriorityAndDefaultMarkup(t *testing.T) {
 		},
 		related: map[uint]bool{},
 	}
+	// Historical rules have already been frozen by the bootstrap migration.
+	repo.settings = append(repo.settings,
+		resellerdomain.ProductSetting{ID: 4, ResellerID: 10, ProductID: 2, SKUID: 22, IsListed: true, PricingMode: resellerdomain.PricingModeFixedPrice, FixedPriceAmount: money.FromDecimal(decimal.NewFromInt(105))},
+		resellerdomain.ProductSetting{ID: 5, ResellerID: 10, ProductID: 3, SKUID: 33, IsListed: true, PricingMode: resellerdomain.PricingModeFixedPrice, FixedPriceAmount: money.FromDecimal(decimal.NewFromInt(60))},
+	)
 	resolver := NewResellerPricingResolver(repo)
 	result := testOrderBuildResult(
 		struct {
@@ -236,7 +242,7 @@ func TestResellerPricingResolverAppliesPriorityAndDefaultMarkup(t *testing.T) {
 	}
 }
 
-func TestResellerPricingResolverRuntimePrioritySnapshotSources(t *testing.T) {
+func TestResellerPricingResolverFixedPriceSnapshotSources(t *testing.T) {
 	repo := &resellerPricingRepoStub{
 		profile: testResellerProfile(),
 		settings: []resellerdomain.ProductSetting{
@@ -270,6 +276,11 @@ func TestResellerPricingResolverRuntimePrioritySnapshotSources(t *testing.T) {
 		},
 		related: map[uint]bool{},
 	}
+	// Historical rules have already been frozen by the bootstrap migration.
+	repo.settings = append(repo.settings,
+		resellerdomain.ProductSetting{ID: 4, ResellerID: 10, ProductID: 2, SKUID: 22, IsListed: true, PricingMode: resellerdomain.PricingModeFixedPrice, FixedPriceAmount: money.FromDecimal(decimal.NewFromInt(105))},
+		resellerdomain.ProductSetting{ID: 5, ResellerID: 10, ProductID: 3, SKUID: 33, IsListed: true, PricingMode: resellerdomain.PricingModeFixedPrice, FixedPriceAmount: money.FromDecimal(decimal.NewFromInt(60))},
+	)
 	resolver := NewResellerPricingResolver(repo)
 	result := testOrderBuildResult(
 		struct {
@@ -316,8 +327,8 @@ func TestResellerPricingResolverRuntimePrioritySnapshotSources(t *testing.T) {
 		}
 	}
 	assertRuntimePricingItem(0, resellerRuleSourceSKU, resellerdomain.PricingModeFixedPrice, "130.00", "30.00")
-	assertRuntimePricingItem(1, resellerRuleSourceProduct, resellerdomain.PricingModeFixedMarkup, "105.00", "50.00")
-	assertRuntimePricingItem(2, resellerRuleSourceProfile, resellerdomain.PricingModeMarkupPercent, "60.00", "10.00")
+	assertRuntimePricingItem(1, resellerRuleSourceSKU, resellerdomain.PricingModeFixedPrice, "105.00", "50.00")
+	assertRuntimePricingItem(2, resellerRuleSourceSKU, resellerdomain.PricingModeFixedPrice, "60.00", "10.00")
 
 	if ctx.BaseAmount.StringFixed(2) != "310.00" || ctx.ResellerAmount.StringFixed(2) != "400.00" || ctx.ProfitAmount.StringFixed(2) != "90.00" {
 		t.Fatalf("context totals mismatch base=%s reseller=%s profit=%s", ctx.BaseAmount, ctx.ResellerAmount, ctx.ProfitAmount)
@@ -419,7 +430,7 @@ func TestResellerPricingResolverValidatesPriceRules(t *testing.T) {
 			wantErr: ErrResellerPriceBelowBase,
 		},
 		{
-			name:    "percent exceeds max",
+			name:    "legacy percent rule is unpriced",
 			profile: testResellerProfile(),
 			setting: resellerdomain.ProductSetting{
 				ID:            3,
@@ -430,7 +441,7 @@ func TestResellerPricingResolverValidatesPriceRules(t *testing.T) {
 				PricingMode:   resellerdomain.PricingModeMarkupPercent,
 				MarkupPercent: money.FromDecimal(decimal.NewFromInt(60)),
 			},
-			wantErr: ErrResellerMarkupExceeded,
+			wantErr: ErrResellerPriceBelowBase,
 		},
 		{
 			name:    "fixed price implicit percent exceeds max",
@@ -447,7 +458,7 @@ func TestResellerPricingResolverValidatesPriceRules(t *testing.T) {
 			wantErr: ErrResellerMarkupExceeded,
 		},
 		{
-			name:    "fixed markup implicit percent exceeds max",
+			name:    "legacy fixed markup is unpriced",
 			profile: testResellerProfile(),
 			setting: resellerdomain.ProductSetting{
 				ID:                5,
@@ -458,7 +469,7 @@ func TestResellerPricingResolverValidatesPriceRules(t *testing.T) {
 				PricingMode:       resellerdomain.PricingModeFixedMarkup,
 				FixedMarkupAmount: money.FromDecimal(decimal.NewFromInt(51)),
 			},
-			wantErr: ErrResellerMarkupExceeded,
+			wantErr: ErrResellerPriceBelowBase,
 		},
 		{
 			name:    "unknown mode",
@@ -471,7 +482,7 @@ func TestResellerPricingResolverValidatesPriceRules(t *testing.T) {
 				IsListed:    true,
 				PricingMode: "surprise",
 			},
-			wantErr: ErrResellerPricingModeInvalid,
+			wantErr: ErrResellerPriceBelowBase,
 		},
 	}
 	for _, tt := range tests {
@@ -508,7 +519,7 @@ func TestResellerPricingResolverSelfDealingRiskSnapshot(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			repo := &resellerPricingRepoStub{profile: testResellerProfile(), related: tt.related}
+			repo := &resellerPricingRepoStub{profile: testResellerProfile(), related: tt.related, settings: []resellerdomain.ProductSetting{{ID: 1, ResellerID: 10, ProductID: 1, SKUID: 11, IsListed: true, PricingMode: resellerdomain.PricingModeFixedPrice, FixedPriceAmount: money.FromDecimal(decimal.NewFromInt(120))}}}
 			resolver := NewResellerPricingResolver(repo)
 			result := testOrderBuildResult(struct {
 				productID uint
@@ -567,14 +578,14 @@ func TestResellerPricingResolverDisplayBatchUsesSingleSettingsLookup(t *testing.
 			ID:          1,
 			PriceAmount: money.FromDecimal(decimal.NewFromInt(100)),
 			SKUs: []productdomain.ProductSKU{
-				{ID: 11, ProductID: 1, PriceAmount: money.FromDecimal(decimal.NewFromInt(100)), CostPriceAmount: money.FromDecimal(decimal.NewFromInt(50)), IsActive: true},
+				{ID: 11, ProductID: 1, PriceAmount: money.FromDecimal(decimal.NewFromInt(100)), CostPriceAmount: money.FromDecimal(decimal.NewFromInt(50)), SupplyPriceAmount: amountPointer(decimal.NewFromInt(100)), IsActive: true},
 			},
 		},
 		{
 			ID:          2,
 			PriceAmount: money.FromDecimal(decimal.NewFromInt(80)),
 			SKUs: []productdomain.ProductSKU{
-				{ID: 22, ProductID: 2, PriceAmount: money.FromDecimal(decimal.NewFromInt(80)), CostPriceAmount: money.FromDecimal(decimal.NewFromInt(40)), IsActive: true},
+				{ID: 22, ProductID: 2, PriceAmount: money.FromDecimal(decimal.NewFromInt(80)), CostPriceAmount: money.FromDecimal(decimal.NewFromInt(40)), SupplyPriceAmount: amountPointer(decimal.NewFromInt(80)), IsActive: true},
 			},
 		},
 	}
@@ -620,8 +631,8 @@ func TestResellerPricingResolverDisplayHidesInvalidSKUWithoutFailing(t *testing.
 			ID:          1,
 			PriceAmount: money.FromDecimal(decimal.NewFromInt(100)),
 			SKUs: []productdomain.ProductSKU{
-				{ID: 11, ProductID: 1, PriceAmount: money.FromDecimal(decimal.NewFromInt(100)), CostPriceAmount: money.FromDecimal(decimal.NewFromInt(50)), IsActive: true},
-				{ID: 12, ProductID: 1, PriceAmount: money.FromDecimal(decimal.NewFromInt(100)), CostPriceAmount: money.FromDecimal(decimal.NewFromInt(50)), IsActive: true},
+				{ID: 11, ProductID: 1, PriceAmount: money.FromDecimal(decimal.NewFromInt(100)), CostPriceAmount: money.FromDecimal(decimal.NewFromInt(50)), SupplyPriceAmount: amountPointer(decimal.NewFromInt(100)), IsActive: true},
+				{ID: 12, ProductID: 1, PriceAmount: money.FromDecimal(decimal.NewFromInt(100)), CostPriceAmount: money.FromDecimal(decimal.NewFromInt(50)), SupplyPriceAmount: amountPointer(decimal.NewFromInt(100)), IsActive: true},
 			},
 		},
 	}
@@ -646,3 +657,5 @@ func TestResellerPricingResolverDisplayHidesInvalidSKUWithoutFailing(t *testing.
 		t.Fatalf("expected display fall back to valid sku 11@130, got %+v", result)
 	}
 }
+
+func amountPointer(d decimal.Decimal) *money.Amount { a := money.FromDecimal(d); return &a }

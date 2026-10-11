@@ -27,6 +27,9 @@ export interface AdminCategory {
 
 // --- Product ---
 export interface AdminProductSKU {
+    supply_price_amount?: string | null
+    min_sale_price_amount?: string | null
+    suggested_sale_price_amount?: string | null
   id: number
   product_id: number
   sku_code: string
@@ -922,6 +925,18 @@ export interface AdminResellerProductSettingRule {
 }
 
 export interface AdminResellerProductSettingSKU {
+    supply_price_amount: string | null
+    min_sale_price_amount: string
+    max_sale_price_amount: string | null
+    suggested_sale_price_amount: string | null
+    sale_price_amount: string
+    draft_price_amount: string
+    profit_amount: string
+    price_valid: boolean
+    can_sell: boolean
+    error_code: string
+    pricing_revision: string
+
   id: number
   sku_code: string
   spec_values: Record<string, string>
@@ -938,6 +953,7 @@ export interface AdminResellerProductSettingDetail {
 }
 
 export interface AdminResellerProductSettingPayloadItem {
+  pricing_revision?: string
   sku_id: number
   is_listed: boolean
   pricing_mode: string
@@ -948,7 +964,7 @@ export interface AdminResellerProductSettingPayloadItem {
 }
 
 export interface AdminResellerProductSettingUpdatePayload {
-  settings: AdminResellerProductSettingPayloadItem[]
+  settings: Array<Pick<AdminResellerProductSettingPayloadItem, "sku_id" | "is_listed"> & Partial<AdminResellerProductSettingPayloadItem>>
 }
 
 export interface AdminResellerProductSettingPreviewItem {

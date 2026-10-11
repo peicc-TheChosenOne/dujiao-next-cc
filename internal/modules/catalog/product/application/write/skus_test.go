@@ -309,3 +309,23 @@ func newSyncSingleSKURepo(t *testing.T) SKURepository {
 	t.Helper()
 	return &memorySKURepository{}
 }
+
+func TestSupplyQuotePreservesOmittedFieldsAndInvalidatesOnCostIncrease(t *testing.T) {
+	a := money.FromDecimal(decimal.NewFromInt(90))
+	minimum := money.FromDecimal(decimal.NewFromInt(100))
+	sku := productdomain.ProductSKU{CostPriceAmount: money.FromDecimal(decimal.NewFromInt(80)), SupplyPriceAmount: &a, MinSalePriceAmount: &minimum}
+	if err := applySupplyQuote(&sku, money.OptionalAmount{}, money.OptionalAmount{}, money.OptionalAmount{}); err != nil || sku.SupplyPriceAmount != &a {
+		t.Fatal(err)
+	}
+	sku.CostPriceAmount = money.FromDecimal(decimal.NewFromInt(95))
+	if err := applySupplyQuote(&sku, money.OptionalAmount{Set: true, Value: &a}, money.OptionalAmount{}, money.OptionalAmount{}); err != nil {
+		t.Fatal("cost increase must preserve unchanged quote", err)
+	}
+	below := money.FromDecimal(decimal.NewFromInt(85))
+	if err := applySupplyQuote(&sku, money.OptionalAmount{Set: true, Value: &below}, money.OptionalAmount{}, money.OptionalAmount{}); !errors.Is(err, productcontract.ErrProductPriceInvalid) {
+		t.Fatal("accepted newly set supply below cost", err)
+	}
+	if err := applySupplyQuote(&sku, money.OptionalAmount{Set: true}, money.OptionalAmount{}, money.OptionalAmount{}); err != nil || sku.SupplyPriceAmount != nil || sku.MinSalePriceAmount != &minimum {
+		t.Fatal("null should clear only supply", err)
+	}
+}

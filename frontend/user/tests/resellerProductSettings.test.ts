@@ -66,3 +66,16 @@ test('product settings pagination normalizes API pagination payloads', () => {
     { page: 4, page_size: 20, total: 80, total_page: 4 },
   )
 })
+
+// Money constraints must reject rounding and allow a visibility-only unlist.
+import { validateRetailPrice, buildRetailSetting } from '../src/utils/resellerSupplyPricing.ts'
+test('fixed retail respects supply floor and capped price', () => {
+ const quote = { supply_price_amount: '80.01', min_sale_price_amount: '85.00', max_sale_price_amount: '88.01', error_code: '' }
+ assert.equal(validateRetailPrice('85', quote), '')
+ assert.equal(validateRetailPrice('84.99', quote), 'below_minimum')
+ assert.equal(validateRetailPrice('88.02', quote), 'markup_exceeded')
+ assert.equal(validateRetailPrice('85.001', quote), 'invalid')
+ assert.equal(validateRetailPrice('85', { ...quote, error_code: 'supply_missing' }), 'supply_missing')
+ assert.deepEqual(buildRetailSetting(1, { price: 'broken draft', listed: false, revision: 'r' }, true), { sku_id: 1, is_listed: false })
+ assert.deepEqual(buildRetailSetting(1, { price: ' 87.00 ', listed: true, revision: 'r' }), { sku_id: 1, is_listed: true, pricing_mode: 'fixed_price', fixed_price_amount: '87.00', pricing_revision: 'r' })
+})

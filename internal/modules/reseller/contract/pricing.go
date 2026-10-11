@@ -47,6 +47,7 @@ type OrderPricingItem struct {
 	ProfitAmount        decimal.Decimal
 	PricingMode         string
 	RuleSource          string
+	PricingRevision     string
 	SettingID           *uint
 	OrderID             uint
 	OrderItemID         uint
@@ -121,6 +122,10 @@ func (ctx *OrderPricingContext) BuildPricingSnapshotJSON() jsonmap.JSON {
 	items := make([]interface{}, 0, len(ctx.Items))
 	for _, item := range ctx.Items {
 		entry := jsonmap.JSON{
+			"pricing_version":       1,
+			"supply_source":         "unified",
+			"supply_unit_amount":    MoneyString(item.BaseUnitAmount),
+			"supply_total_amount":   MoneyString(item.BaseTotalAmount),
 			"product_id":            item.ProductID,
 			"sku_id":                item.SKUID,
 			"quantity":              item.Quantity,
@@ -143,6 +148,9 @@ func (ctx *OrderPricingContext) BuildPricingSnapshotJSON() jsonmap.JSON {
 		items = append(items, entry)
 	}
 	return jsonmap.JSON{
+		"pricing_version": 1,
+		"supply_source":   "unified",
+		"supply_amount":   MoneyString(ctx.BaseAmount),
 		"currency":        ctx.Currency,
 		"base_amount":     MoneyString(ctx.BaseAmount),
 		"reseller_amount": MoneyString(ctx.ResellerAmount),
@@ -225,4 +233,12 @@ func SnapshotDomain(tenant TenantContext) string {
 		return NormalizeHost(host)
 	}
 	return NormalizeHost(tenant.Host)
+}
+
+// PricingStore is the transaction-bound pricing port used at checkout.
+type PricingStore interface {
+	GetProfileByID(id uint) (*resellerdomain.Profile, error)
+	ListProductSettingsForPricing(resellerID uint, productIDs, skuIDs []uint) ([]resellerdomain.ProductSetting, error)
+	IsActiveRelatedAccount(resellerID, userID uint) (bool, error)
+	LockPricingInputs(resellerID uint, productIDs []uint) error
 }
