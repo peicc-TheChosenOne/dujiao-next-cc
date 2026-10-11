@@ -22,3 +22,12 @@ internal/web/dist/
 # Agents 配置
 .agents/
 skills-lock.json
+
+# Private deployment records belong outside the public repository.
+.ops-local/
+deploy/private/
+deploy/releases/
+deploy/ESA接入记录*.md
+deploy/大陆访问诊断*.md
+deploy/二开内容盘点.zh.md
+deploy/*.local.md
