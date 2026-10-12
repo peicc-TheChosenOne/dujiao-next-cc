@@ -36,6 +36,7 @@ func registerStorefrontRoutes(
 	publicCategoryHandler *categoryhttp.PublicHandler,
 	userResellerHandler *resellertransport.UserHandler,
 	userResellerProductSettingHandler *resellertransport.UserProductSettingHandler,
+	userResellerProductImagesHandler *resellertransport.UserProductImagesHandler,
 	userResellerFinanceHandler *resellertransport.UserFinanceHandler,
 	userResellerOrderHandler *resellertransport.UserOrderHandler,
 	userApiCredentialHandler *apicredentialtransport.UserHandler,
@@ -147,6 +148,7 @@ func registerStorefrontRoutes(
 		{
 			resellertransport.RegisterUserConsoleRoutes(resellerConsole, userResellerHandler)
 			resellertransport.RegisterUserProductSettingRoutes(resellerConsole, userResellerProductSettingHandler)
+			resellertransport.RegisterUserProductImagesRoutes(resellerConsole, userResellerProductImagesHandler)
 			resellertransport.RegisterUserFinanceRoutes(resellerConsole, userResellerFinanceHandler)
 			resellertransport.RegisterUserOrderRoutes(resellerConsole, userResellerOrderHandler)
 		}

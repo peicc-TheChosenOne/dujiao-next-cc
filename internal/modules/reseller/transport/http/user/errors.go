@@ -2,6 +2,8 @@ package userhttp
 
 import (
 	"errors"
+	"github.com/dujiao-next/internal/i18n"
+	"net/http"
 
 	productcontract "github.com/dujiao-next/internal/modules/catalog/product/contract"
 
@@ -11,6 +13,22 @@ import (
 
 	"github.com/gin-gonic/gin"
 )
+
+func respondUserProductImagesError(c *gin.Context, err error) {
+	if errors.Is(err, resellermodule.ErrProductImagesChanged) {
+		response.ErrorWithHTTPStatus(c, http.StatusConflict, http.StatusConflict, i18n.T(i18n.ResolveLocale(c), "error.reseller_product_images_changed"))
+		return
+	}
+	if errors.Is(err, resellermodule.ErrProductImagesLimit) {
+		ginutil.RespondError(c, response.CodeBadRequest, "error.reseller_product_images_limit", nil)
+		return
+	}
+	if errors.Is(err, resellermodule.ErrProductImagesInvalid) || isUploadValidationError(err) {
+		ginutil.RespondError(c, response.CodeBadRequest, "error.reseller_product_images_invalid", nil)
+		return
+	}
+	respondUserProductSettingError(c, err, "error.save_failed")
+}
 
 type mappedError struct {
 	target error
@@ -50,6 +68,12 @@ func siteConfigFieldErrorKey(field string) string {
 		return "error.reseller_support_url_invalid"
 	case "image":
 		return "error.reseller_image_invalid"
+	case "banner":
+		return "error.reseller_banner_invalid"
+	case "banner_image":
+		return "error.reseller_banner_image_invalid"
+	case "banner_link":
+		return "error.reseller_banner_link_invalid"
 	case "link":
 		return "error.reseller_link_invalid"
 	default:

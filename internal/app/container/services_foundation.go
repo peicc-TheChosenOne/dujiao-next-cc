@@ -121,6 +121,13 @@ func (c *Container) initIdentityAndCatalogServices() {
 		MaxWidth:          c.Config.Upload.MaxWidth,
 		MaxHeight:         c.Config.Upload.MaxHeight,
 	}, uploadlocal.New("uploads"))
+	c.ResellerProductImageService = reseller.NewProductImageService(c.ResellerStore, uploadapp.NewService(uploadapp.Policy{
+		MaxSize:           reseller.ProductImageMaxSize,
+		AllowedTypes:      []string{"image/png", "image/jpeg", "image/gif", "image/webp"},
+		AllowedExtensions: []string{".png", ".jpg", ".jpeg", ".gif", ".webp"},
+		MaxWidth:          c.Config.Upload.MaxWidth,
+		MaxHeight:         c.Config.Upload.MaxHeight,
+	}, uploadlocal.New("uploads")))
 	c.AffiliateService = affiliateapp.NewService(c.AffiliateRepo, c.UserStore, c.OrderStore, c.ProductRepo, c.SettingService)
 	productServices := catalogproductbootstrap.New(catalogproductbootstrap.Dependencies{
 		Products:          c.ProductRepo,

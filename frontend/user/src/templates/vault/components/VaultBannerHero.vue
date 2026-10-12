@@ -14,7 +14,8 @@
           class="absolute inset-0 h-full w-full object-cover"
         />
       </Transition>
-      <div class="absolute inset-0 bg-gradient-to-r from-black/65 via-black/40 to-black/15"></div>
+      <div v-if="showHeroOverlay" class="absolute inset-0 bg-gradient-to-r from-black/65 via-black/40 to-black/15"></div>
+      <a v-if="isCustomBanner && hasHeroLink" :href="heroLink" :target="heroOpenInNewTab ? '_blank' : undefined" rel="noopener noreferrer" :aria-label="heroTitle || heroPrimaryButtonText" class="absolute inset-0 z-10" @click.prevent="goToHeroLink"></a>
 
       <!-- Loading skeleton -->
       <div v-if="bannerLoading" class="relative flex min-h-[180px] flex-col justify-end gap-3 p-5 sm:min-h-[240px] sm:p-7 md:min-h-[300px] md:p-9">
@@ -45,13 +46,13 @@
         </div>
 
         <div class="mt-auto max-w-[640px] space-y-2.5">
-          <span class="inline-flex items-center gap-1.5 rounded-full border border-white/25 bg-black/45 px-3 py-1 text-[12px] font-bold uppercase tracking-[0.04em] text-white backdrop-blur-sm">
+          <span v-if="heroBadge" class="inline-flex items-center gap-1.5 rounded-full border border-white/25 bg-black/45 px-3 py-1 text-[12px] font-bold uppercase tracking-[0.04em] text-white backdrop-blur-sm">
             <Zap class="h-3.5 w-3.5" /> {{ heroBadge }}
           </span>
-          <h2 class="text-xl font-extrabold leading-tight text-white sm:text-2xl md:text-[2rem]">{{ heroTitle }}</h2>
-          <p class="line-clamp-2 max-w-[52ch] text-sm leading-relaxed text-white/85 sm:text-base">{{ heroSubtitle }}</p>
+          <h2 v-if="heroTitle" class="text-xl font-extrabold leading-tight text-white sm:text-2xl md:text-[2rem]">{{ heroTitle }}</h2>
+          <p v-if="heroSubtitle" class="line-clamp-2 max-w-[52ch] text-sm leading-relaxed text-white/85 sm:text-base">{{ heroSubtitle }}</p>
 
-          <div class="flex flex-wrap items-center gap-3 pt-1.5">
+          <div v-if="showHeroLink" class="flex flex-wrap items-center gap-3 pt-1.5">
             <button
               type="button"
               class="inline-flex min-h-[40px] items-center gap-2 rounded-full bg-white px-5 py-2.5 text-sm font-bold text-[color:var(--ink)] transition hover:scale-[1.03]"
@@ -93,6 +94,12 @@ const {
   currentBannerIndex,
   bannerCount,
   showHeroSection,
+  isCustomBanner,
+  showHeroLink,
+  showHeroOverlay,
+  hasHeroLink,
+  heroLink,
+  heroOpenInNewTab,
   heroImage,
   heroBadge,
   heroTitle,

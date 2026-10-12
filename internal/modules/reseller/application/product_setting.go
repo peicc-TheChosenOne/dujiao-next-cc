@@ -1,6 +1,7 @@
 package application
 
 import (
+	"mime/multipart"
 	"strings"
 
 	resellercontract "github.com/dujiao-next/internal/modules/reseller/contract"
@@ -9,10 +10,196 @@ import (
 
 	productcontract "github.com/dujiao-next/internal/modules/catalog/product/contract"
 	productdomain "github.com/dujiao-next/internal/modules/catalog/product/domain"
+	uploadcontract "github.com/dujiao-next/internal/modules/upload/contract"
+	"github.com/dujiao-next/internal/shared/jsonslice"
+	"github.com/google/uuid"
 
 	"github.com/dujiao-next/internal/shared/money"
 	"github.com/shopspring/decimal"
 )
+
+const ProductImageMaxSize int64 = 500 * 1024
+const ProductImageMaxCount = 5
+
+type ProductImageUploader interface {
+	SaveFileWithMeta(file *multipart.FileHeader, scene string) (*uploadcontract.Result, error)
+}
+
+type ProductImageService struct {
+	store    resellercontract.ProductImageStore
+	uploader ProductImageUploader
+}
+
+type ProductImageState struct {
+	Product productdomain.Product
+	Config  resellerdomain.ProductImages
+}
+
+func NewProductImageService(store resellercontract.ProductImageStore, uploader ProductImageUploader) *ProductImageService {
+	return &ProductImageService{store: store, uploader: uploader}
+}
+
+func (s *ProductImageService) activeProfile(userID uint) (*resellerdomain.Profile, error) {
+	profile, err := s.store.GetProfileByUserID(userID)
+	if err != nil {
+		return nil, err
+	}
+	if profile == nil {
+		return nil, resellercontract.ErrNotOpened
+	}
+	if profile.Status != resellerdomain.ProfileStatusActive {
+		return nil, resellercontract.ErrProfileInactive
+	}
+	return profile, nil
+}
+
+func (s *ProductImageService) ListUserProductImages(userID uint, input ProductSettingUserListInput) ([]ProductImageState, int64, error) {
+	profile, err := s.activeProfile(userID)
+	if err != nil {
+		return nil, 0, err
+	}
+	rows, total, err := s.store.ListProductsWithSettings(resellercontract.ProductSettingListFilter{ResellerID: profile.ID, OnlyActive: true, Page: input.Page, PageSize: input.PageSize, Keyword: input.Keyword})
+	if err != nil {
+		return nil, 0, err
+	}
+	ids := make([]uint, 0, len(rows))
+	for _, row := range rows {
+		ids = append(ids, row.Product.ID)
+	}
+	configs, err := s.store.ListProductImages(profile.ID, ids)
+	if err != nil {
+		return nil, 0, err
+	}
+	byID := make(map[uint]resellerdomain.ProductImages, len(configs))
+	for _, config := range configs {
+		byID[config.ProductID] = config
+	}
+	states := make([]ProductImageState, 0, len(rows))
+	for _, row := range rows {
+		states = append(states, ProductImageState{Product: row.Product, Config: byID[row.Product.ID]})
+	}
+	return states, total, nil
+}
+
+func (s *ProductImageService) GetUserProductImages(userID, productID uint) (*ProductImageState, error) {
+	profile, err := s.activeProfile(userID)
+	if err != nil {
+		return nil, err
+	}
+	row, err := s.store.GetProductWithSettings(profile.ID, productID)
+	if err != nil {
+		return nil, err
+	}
+	if row == nil || !row.Product.IsActive || !row.Product.Category.IsActive || row.Product.Category.DeletedAt != nil {
+		return nil, productcontract.ErrNotFound
+	}
+	configs, err := s.store.ListProductImages(profile.ID, []uint{productID})
+	if err != nil {
+		return nil, err
+	}
+	config := resellerdomain.ProductImages{ResellerID: profile.ID, ProductID: productID, Images: jsonslice.Strings{}}
+	if len(configs) > 0 {
+		config = configs[0]
+	}
+	return &ProductImageState{Product: row.Product, Config: config}, nil
+}
+
+func (s *ProductImageService) saveImages(state *ProductImageState, images []string, revision uint64, operationID string) (*ProductImageState, error) {
+	if _, err := uuid.Parse(operationID); err != nil || len(operationID) != 36 {
+		return nil, resellercontract.ErrProductImagesInvalid
+	}
+	config := state.Config
+	config.Images = append(jsonslice.Strings{}, images...)
+	config.OperationID = operationID
+	if err := s.store.SaveProductImages(config, revision); err != nil {
+		return nil, err
+	}
+	config.Revision = revision + 1
+	return &ProductImageState{Product: state.Product, Config: config}, nil
+}
+
+func (s *ProductImageService) UpdateUserProductImages(userID, productID uint, images []string, revision uint64, operationID string) (*ProductImageState, error) {
+	state, err := s.GetUserProductImages(userID, productID)
+	if err != nil {
+		return nil, err
+	}
+	if state.Config.Revision != revision {
+		return nil, resellercontract.ErrProductImagesChanged
+	}
+	if len(images) > ProductImageMaxCount {
+		return nil, resellercontract.ErrProductImagesLimit
+	}
+	allowed := make(map[string]bool, len(state.Config.Images))
+	for _, image := range state.Config.Images {
+		allowed[image] = true
+	}
+	for _, image := range images {
+		if !allowed[image] {
+			return nil, resellercontract.ErrProductImagesInvalid
+		}
+		delete(allowed, image) // 不允许重复图片，也不能引入其他商品/店铺或外部地址。
+	}
+	return s.saveImages(state, images, revision, operationID)
+}
+
+func (s *ProductImageService) UploadUserProductImage(userID, productID uint, file *multipart.FileHeader, revision uint64, operationID string) (*ProductImageState, error) {
+	state, err := s.GetUserProductImages(userID, productID)
+	if err != nil {
+		return nil, err
+	}
+	if state.Config.Revision != revision {
+		return nil, resellercontract.ErrProductImagesChanged
+	}
+	if len(state.Config.Images) >= ProductImageMaxCount {
+		return nil, resellercontract.ErrProductImagesLimit
+	}
+	result, err := s.uploadImageFile(file, operationID)
+	if err != nil {
+		return nil, err
+	}
+	images := append(append([]string{}, state.Config.Images...), result.URL)
+	return s.saveImages(state, images, revision, operationID)
+}
+
+func (s *ProductImageService) uploadImageFile(file *multipart.FileHeader, operationID string) (*uploadcontract.Result, error) {
+	if file == nil || file.Size <= 0 || file.Size > ProductImageMaxSize {
+		return nil, resellercontract.ErrProductImagesInvalid
+	}
+	if _, err := uuid.Parse(operationID); err != nil || len(operationID) != 36 {
+		return nil, resellercontract.ErrProductImagesInvalid
+	}
+	// 上传器由装配层提供独立的 PNG/JPG/GIF/WebP 和 500KB 策略，不改变站点 Logo/Banner 策略。
+	return s.uploader.SaveFileWithMeta(file, "reseller")
+}
+
+// UploadUserProductDetailImage 替换单张详情图，保留独立的商品主图。
+func (s *ProductImageService) UploadUserProductDetailImage(userID, productID uint, file *multipart.FileHeader, revision uint64, operationID string) (*ProductImageState, error) {
+	state, err := s.GetUserProductImages(userID, productID)
+	if err != nil {
+		return nil, err
+	}
+	if state.Config.Revision != revision {
+		return nil, resellercontract.ErrProductImagesChanged
+	}
+	result, err := s.uploadImageFile(file, operationID)
+	if err != nil {
+		return nil, err
+	}
+	state.Config.DetailImage = result.URL
+	return s.saveImages(state, state.Config.Images, revision, operationID)
+}
+
+func (s *ProductImageService) ResetUserProductDetailImage(userID, productID uint, revision uint64, operationID string) (*ProductImageState, error) {
+	state, err := s.GetUserProductImages(userID, productID)
+	if err != nil {
+		return nil, err
+	}
+	if state.Config.Revision != revision {
+		return nil, resellercontract.ErrProductImagesChanged
+	}
+	state.Config.DetailImage = ""
+	return s.saveImages(state, state.Config.Images, revision, operationID)
+}
 
 // ProductSettingService 分销商品改价/上架配置用例。
 type ProductSettingService struct {

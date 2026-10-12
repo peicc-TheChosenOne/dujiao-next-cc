@@ -9,6 +9,7 @@ import (
 type Handlers struct {
 	User                *userhttp.UserHandler
 	UserProductSetting  *userhttp.UserProductSettingHandler
+	UserProductImages   *userhttp.UserProductImagesHandler
 	UserFinance         *userhttp.UserFinanceHandler
 	UserOrder           *userhttp.UserOrderHandler
 	AdminManagement     *adminhttp.AdminManagementHandler
@@ -27,6 +28,7 @@ func New(c *container.Container) Handlers {
 			c.UploadService,
 		),
 		UserProductSetting: userhttp.NewUserProductSettingHandler(c.ResellerProductSettingService),
+		UserProductImages:  userhttp.NewUserProductImagesHandler(c.ResellerProductImageService),
 		UserFinance: userhttp.NewUserFinanceHandler(
 			c.ResellerAccountingQuery,
 			c.ResellerAccountingWithdraw,

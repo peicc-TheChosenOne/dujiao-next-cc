@@ -1,3 +1,5 @@
+import type { ResellerBannerConfig } from '../api/types'
+
 export type ResellerLocale = 'zh-CN' | 'zh-TW' | 'en-US'
 export type LocalizedText = Record<ResellerLocale, string>
 
@@ -41,6 +43,28 @@ export const normalizeLocalizedTextForForm = (
     'zh-TW': String(value?.['zh-TW'] || ''),
     'en-US': String(value?.['en-US'] || ''),
 })
+
+export const normalizeResellerBannerForForm = (
+    banner?: Partial<ResellerBannerConfig> | null,
+): ResellerBannerConfig => ({
+    mode: banner?.mode === 'custom' || banner?.mode === 'hidden' ? banner.mode : 'inherit',
+    image: String(banner?.image || ''),
+    mobile_image: String(banner?.mobile_image || ''),
+    title: normalizeLocalizedTextForForm(banner?.title),
+    subtitle: normalizeLocalizedTextForForm(banner?.subtitle),
+    link_type: banner?.link_type === 'internal' || banner?.link_type === 'external' ? banner.link_type : 'none',
+    link_value: String(banner?.link_value || ''),
+    open_in_new_tab: banner?.open_in_new_tab === true,
+})
+
+export const getResellerBannerOverride = (
+    tenantMode: unknown,
+    banner?: Partial<ResellerBannerConfig> | null,
+) => {
+    if (tenantMode !== 'reseller' || !banner || banner.mode === 'inherit') return null
+    if (banner.mode !== 'custom' && banner.mode !== 'hidden') return null
+    return normalizeResellerBannerForForm(banner)
+}
 
 export const normalizeFooterLinksForForm = (
     links?: Array<{ name?: Partial<LocalizedText> | Record<string, unknown>; url?: string }> | null,

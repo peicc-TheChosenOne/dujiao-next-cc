@@ -12,7 +12,8 @@
             <Transition name="banner-fade" mode="out-in">
               <img v-if="!bannerLoading && heroImage" :src="heroImage" :key="heroImage" class="absolute inset-0 h-full w-full object-cover" />
             </Transition>
-            <div class="absolute inset-0 bg-black/50"></div>
+            <div v-if="showHeroOverlay" class="absolute inset-0 bg-black/50"></div>
+            <a v-if="isCustomBanner && hasHeroLink" :href="heroLink" :target="heroOpenInNewTab ? '_blank' : undefined" rel="noopener noreferrer" :aria-label="heroTitle || heroPrimaryButtonText" class="absolute inset-0 z-10" @click.prevent="goToHeroLink"></a>
             <div v-if="bannerLoading" class="relative flex min-h-[200px] flex-col justify-between p-5 sm:min-h-[240px] sm:p-6 md:min-h-[320px] md:p-10">
               <div class="space-y-3">
                 <div class="h-5 w-24 theme-skeleton rounded-full" style="background: rgba(255,255,255,0.35)"></div>
@@ -34,14 +35,14 @@
                 </button>
               </div>
               <div class="space-y-2 sm:space-y-3">
-                <span :class="heroBadgeClass">
+                <span v-if="heroBadge" :class="heroBadgeClass">
                   <span class="h-2 w-2 rounded-full bg-emerald-300"></span>
                   {{ heroBadge }}
                 </span>
-                <h1 class="max-w-4xl text-xl font-semibold tracking-[-0.02em] text-white sm:text-2xl md:text-3xl">
+                <h1 v-if="heroTitle" class="max-w-4xl text-xl font-semibold tracking-[-0.02em] text-white sm:text-2xl md:text-3xl">
                   {{ heroTitle }}
                 </h1>
-                <p class="max-w-3xl text-xs leading-relaxed text-gray-100 sm:text-sm">
+                <p v-if="heroSubtitle" class="max-w-3xl text-xs leading-relaxed text-gray-100 sm:text-sm">
                   {{ heroSubtitle }}
                 </p>
               </div>
@@ -172,7 +173,8 @@
           <Transition name="banner-fade" mode="out-in">
             <img v-if="!bannerLoading && heroImage" :src="heroImage" :key="heroImage" class="absolute inset-0 h-full w-full object-cover" />
           </Transition>
-          <div class="absolute inset-0 bg-black/50"></div>
+          <div v-if="showHeroOverlay" class="absolute inset-0 bg-black/50"></div>
+          <a v-if="isCustomBanner && hasHeroLink" :href="heroLink" :target="heroOpenInNewTab ? '_blank' : undefined" rel="noopener noreferrer" :aria-label="heroTitle || heroPrimaryButtonText" class="absolute inset-0 z-10" @click.prevent="goToHeroLink"></a>
 
             <div v-if="bannerLoading" class="relative flex min-h-[260px] flex-col justify-between p-5 sm:min-h-[320px] sm:p-6 md:min-h-[420px] md:p-12">
             <div class="mb-4 flex items-center justify-end">
@@ -214,19 +216,19 @@
             </div>
 
             <div class="space-y-3 sm:space-y-4">
-              <span :class="heroBadgeClass">
+              <span v-if="heroBadge" :class="heroBadgeClass">
                 <span class="h-2 w-2 rounded-full bg-emerald-300"></span>
                 {{ heroBadge }}
               </span>
-              <h1 class="max-w-4xl text-2xl font-semibold tracking-[-0.02em] text-white sm:text-3xl md:text-[2.85rem]">
+              <h1 v-if="heroTitle" class="max-w-4xl text-2xl font-semibold tracking-[-0.02em] text-white sm:text-3xl md:text-[2.85rem]">
                 {{ heroTitle }}
               </h1>
-              <p class="max-w-3xl text-xs leading-relaxed text-gray-100 sm:text-sm md:text-base">
+              <p v-if="heroSubtitle" class="max-w-3xl text-xs leading-relaxed text-gray-100 sm:text-sm md:text-base">
                 {{ heroSubtitle }}
               </p>
             </div>
 
-            <div class="flex flex-wrap items-center gap-3 pt-5 sm:pt-6">
+            <div v-if="showHeroLink" class="flex flex-wrap items-center gap-3 pt-5 sm:pt-6">
               <button
                 type="button"
                 @click="goToHeroLink"
@@ -405,6 +407,11 @@ const {
   currentBannerIndex,
   bannerCount,
   showHeroSection,
+  isCustomBanner,
+  showHeroLink,
+  showHeroOverlay,
+  heroLink,
+  heroOpenInNewTab,
   heroImage,
   heroBadge,
   heroTitle,

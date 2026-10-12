@@ -8,6 +8,7 @@ import (
 	"net/mail"
 	"net/url"
 	"strings"
+	"unicode"
 
 	resellercontract "github.com/dujiao-next/internal/modules/reseller/contract"
 
@@ -22,6 +23,74 @@ import (
 )
 
 type LocalizedTextInput map[string]string
+
+type ResellerBannerInput struct {
+	Mode         string             `json:"mode"`
+	Image        string             `json:"image"`
+	MobileImage  string             `json:"mobile_image"`
+	Title        LocalizedTextInput `json:"title"`
+	Subtitle     LocalizedTextInput `json:"subtitle"`
+	LinkType     string             `json:"link_type"`
+	LinkValue    string             `json:"link_value"`
+	OpenInNewTab bool               `json:"open_in_new_tab"`
+}
+
+func normalizeResellerBanner(input *ResellerBannerInput) (jsonmap.JSON, error) {
+	if input == nil {
+		return nil, nil
+	}
+	mode := strings.TrimSpace(input.Mode)
+	if mode == "" {
+		mode = "inherit"
+	}
+	if mode != "inherit" && mode != "custom" && mode != "hidden" {
+		return nil, newResellerFieldError("banner")
+	}
+	if mode != "custom" {
+		return jsonmap.JSON{"mode": mode}, nil
+	}
+	image, err := validateHTTPOrUploadPath(input.Image)
+	if err != nil || image == "" {
+		return nil, newResellerFieldError("banner_image")
+	}
+	mobileImage, err := validateHTTPOrUploadPath(input.MobileImage)
+	if err != nil {
+		return nil, newResellerFieldError("banner_image")
+	}
+	linkType := strings.TrimSpace(input.LinkType)
+	if linkType == "" {
+		linkType = "none"
+	}
+	linkValue := trimLimit(input.LinkValue, 1000)
+	openInNewTab := input.OpenInNewTab
+	if linkType == "none" {
+		linkValue = ""
+		openInNewTab = false
+	} else {
+		parsed, err := url.Parse(linkValue)
+		if err != nil || linkValue == "" || strings.IndexFunc(linkValue, unicode.IsControl) >= 0 || strings.Contains(linkValue, "\\") {
+			return nil, newResellerFieldError("banner_link")
+		}
+		switch linkType {
+		case "internal":
+			if !strings.HasPrefix(linkValue, "/") || strings.HasPrefix(linkValue, "//") || parsed.Scheme != "" || parsed.Host != "" {
+				return nil, newResellerFieldError("banner_link")
+			}
+		case "external":
+			if (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+				return nil, newResellerFieldError("banner_link")
+			}
+		default:
+			return nil, newResellerFieldError("banner_link")
+		}
+	}
+	return jsonmap.JSON{
+		"mode": mode, "image": image, "mobile_image": mobileImage,
+		"title":     normalizeResellerLocalizedText(input.Title, 120),
+		"subtitle":  normalizeResellerLocalizedText(input.Subtitle, 300),
+		"link_type": linkType, "link_value": linkValue, "open_in_new_tab": openInNewTab,
+	}, nil
+}
 
 type ResellerAnnouncementInput struct {
 	Enabled bool               `json:"enabled"`
@@ -60,6 +129,7 @@ type ResellerSiteConfigInput struct {
 	SiteName     string                    `json:"site_name"`
 	Logo         string                    `json:"logo"`
 	Favicon      string                    `json:"favicon"`
+	Banner       *ResellerBannerInput      `json:"banner,omitempty"`
 	Announcement ResellerAnnouncementInput `json:"announcement"`
 	Support      ResellerSupportInput      `json:"support"`
 	SEO          ResellerSEOInput          `json:"seo"`
@@ -243,6 +313,10 @@ func normalizeResellerNavConfig(input ResellerNavConfigInput) (jsonmap.JSON, err
 }
 
 func (s *SiteConfigService) buildModel(resellerID uint, input ResellerSiteConfigInput) (*resellerdomain.SiteConfig, error) {
+	banner, err := normalizeResellerBanner(input.Banner)
+	if err != nil {
+		return nil, err
+	}
 	logo, err := validateHTTPOrUploadPath(input.Logo)
 	if err != nil {
 		return nil, newResellerFieldError("image")
@@ -272,6 +346,7 @@ func (s *SiteConfigService) buildModel(resellerID uint, input ResellerSiteConfig
 		SiteName:         trimLimit(input.SiteName, 120),
 		Logo:             logo,
 		Favicon:          favicon,
+		BannerJSON:       banner,
 		AnnouncementJSON: normalizeResellerAnnouncement(input.Announcement),
 		SupportJSON:      support,
 		SEOJSON:          seo,
@@ -301,7 +376,7 @@ func (s *SiteConfigService) GetUserSiteConfig(userID uint) (*resellerdomain.Prof
 }
 
 func (s *SiteConfigService) UpdateUserSiteConfig(ctx context.Context, userID uint, input ResellerSiteConfigInput) (*resellerdomain.SiteConfig, error) {
-	profile, _, canEdit, err := s.GetUserSiteConfig(userID)
+	profile, existing, canEdit, err := s.GetUserSiteConfig(userID)
 	if err != nil {
 		return nil, err
 	}
@@ -311,6 +386,9 @@ func (s *SiteConfigService) UpdateUserSiteConfig(ctx context.Context, userID uin
 	row, err := s.buildModel(profile.ID, input)
 	if err != nil {
 		return nil, err
+	}
+	if input.Banner == nil && existing != nil {
+		row.BannerJSON = existing.BannerJSON
 	}
 	saved, err := s.repo.UpsertSiteConfig(*row)
 	if err != nil {
@@ -334,6 +412,15 @@ func (s *SiteConfigService) UpdateAdminSiteConfig(ctx context.Context, resellerI
 	row, err := s.buildModel(resellerID, input)
 	if err != nil {
 		return nil, err
+	}
+	if input.Banner == nil {
+		existing, err := s.repo.GetSiteConfigByResellerID(resellerID)
+		if err != nil {
+			return nil, err
+		}
+		if existing != nil {
+			row.BannerJSON = existing.BannerJSON
+		}
 	}
 	saved, err := s.repo.UpsertSiteConfig(*row)
 	if err != nil {
@@ -375,6 +462,7 @@ func (s *SiteConfigService) ApplyPublicConfigOverlay(ctx context.Context, tenant
 	}
 	// Reseller contacts are independent, including before any site config is saved.
 	out["contact"] = map[string]interface{}{}
+	out["reseller_banner"] = jsonmap.JSON{"mode": "inherit"}
 	brand, _ := out["brand"].(map[string]interface{})
 	if brand == nil {
 		brand = map[string]interface{}{}
@@ -478,6 +566,9 @@ func applyResellerAnnouncementToPublicConfig(out map[string]interface{}, raw jso
 func applyResellerSiteConfigToPublicConfig(out map[string]interface{}, cfg *resellerdomain.SiteConfig) {
 	if cfg == nil {
 		return
+	}
+	if len(cfg.BannerJSON) > 0 {
+		out["reseller_banner"] = cfg.BannerJSON
 	}
 	brand, _ := out["brand"].(map[string]interface{})
 	if brand == nil {

@@ -21,7 +21,7 @@ func TestAdminResellerSiteConfigUpdateAndAudit(t *testing.T) {
 	resellerRepo := resellergormstore.New(db)
 	h.ResellerSiteConfigService = resellermodule.NewSiteConfigService(resellerRepo)
 	profile := seedAdminResellerManagementProfile(t, db, resellerdomain.ProfileStatusActive)
-	body := strings.NewReader(`{"site_name":"Admin Edited","support":{"telegram":"https://t.me/admin","wechat":"shop_support","qq":"987654321"}}`)
+	body := strings.NewReader(`{"site_name":"Admin Edited","banner":{"mode":"custom","image":"/uploads/reseller/admin-banner.png","link_type":"none"},"support":{"telegram":"https://t.me/admin","wechat":"shop_support","qq":"987654321"}}`)
 	c, recorder := newAdminResellerManagementContext(http.MethodPut, fmt.Sprintf("/admin/resellers/site-configs/%d", profile.ID), body)
 	c.Params = gin.Params{{Key: "reseller_id", Value: fmt.Sprintf("%d", profile.ID)}}
 
@@ -35,6 +35,9 @@ func TestAdminResellerSiteConfigUpdateAndAudit(t *testing.T) {
 	}
 	if row.SiteName != "Admin Edited" {
 		t.Fatalf("unexpected site name: %s", row.SiteName)
+	}
+	if row.BannerJSON["image"] != "/uploads/reseller/admin-banner.png" || !strings.Contains(recorder.Body.String(), `"banner":`) {
+		t.Fatalf("admin Banner did not round-trip: %+v %s", row.BannerJSON, recorder.Body.String())
 	}
 	if row.SupportJSON["wechat"] != "shop_support" || row.SupportJSON["qq"] != "987654321" {
 		t.Fatalf("expected saved WeChat and QQ contacts, got %+v", row.SupportJSON)

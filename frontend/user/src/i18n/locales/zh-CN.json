@@ -653,7 +653,7 @@
       "withdrawEmpty": "暂无提现记录",
       "siteConfig": {
         "title": "站点配置",
-        "subtitle": "维护分销站点的品牌、公告、客服和 SEO 信息",
+        "subtitle": "维护分销站点的品牌、Banner、公告、客服和 SEO 信息",
         "save": "保存配置",
         "saving": "保存中...",
         "loadFailed": "站点配置加载失败，请稍后重试",
@@ -661,6 +661,48 @@
         "saveFailed": "站点配置保存失败，请检查输入后重试",
         "inactive": "分销商身份启用后才能编辑站点配置。",
         "emptyLinks": "暂无页脚链接",
+        "banner": {
+          "title": "首页 Banner",
+          "description": "设置本店首页主图，仅对自己的分销站生效。",
+          "reset": "恢复总店默认",
+          "modes": {
+            "inherit": "使用总店默认",
+            "custom": "使用我的 Banner",
+            "hidden": "不显示 Banner"
+          },
+          "modeHints": {
+            "inherit": "跟随总店 Banner，适合暂时不单独装修的店铺。",
+            "custom": "上传自己的电脑端和手机端首页主图。",
+            "hidden": "在本店首页隐藏整个 Banner 区域。"
+          },
+          "desktopImage": "电脑端 Banner",
+          "mobileImage": "手机端 Banner（可选）",
+          "desktopHint": "建议 1920 × 600，支持 JPG / PNG / WebP / GIF，建议压缩后上传。",
+          "mobileHint": "建议 750 × 600；未上传手机端图片时使用电脑端图片。",
+          "text": "Banner 文案",
+          "textHint": "可选填写，支持简体、繁体和英文；留空则不叠加文案。",
+          "mainTitle": "主标题",
+          "subtitle": "副标题",
+          "linkType": "点击跳转",
+          "linkTypes": {
+            "none": "不跳转",
+            "internal": "站内页面",
+            "external": "外部链接"
+          },
+          "linkValue": "跳转地址",
+          "openInNewTab": "在新窗口打开",
+          "preview": "效果预览",
+          "devices": {
+            "desktop": "电脑端",
+            "mobile": "手机端"
+          },
+          "locales": {
+            "simplified": "简体",
+            "traditional": "繁體",
+            "english": "EN"
+          },
+          "emptyPreview": "上传图片或填写文案后预览效果"
+        },
         "sections": {
           "brand": "品牌基础",
           "support": "客服联系方式",
@@ -678,6 +720,8 @@
         "tabs": {
           "brand": "品牌",
           "brandDescription": "名称与图标",
+          "banner": "Banner",
+          "bannerDescription": "首页主图",
           "support": "客服",
           "supportDescription": "联系方式",
           "content": "内容",
@@ -1310,7 +1354,7 @@
       "apply": "开通申请",
       "domains": "域名管理",
       "site": "店铺设置",
-      "products": "商品定价",
+      "products": "商品管理",
       "orders": "销售订单",
       "finance": "财务概览",
       "ledger": "账务流水",
@@ -1410,7 +1454,7 @@
     },
     "site": {
       "title": "店铺设置",
-      "description": "配置分销站名称、公告、客服信息、导航和基础样式。",
+      "description": "配置分销站名称、首页 Banner、公告、客服信息、导航和基础样式。",
       "previewStore": "预览站点",
       "cards": {
         "brand": "品牌",
@@ -1424,18 +1468,20 @@
       },
       "readiness": {
         "title": "配置进度",
-        "description": "先完成品牌和客服，再补齐 SEO、公告、页脚链接和导航展示。",
+        "description": "先完成品牌、Banner 和客服，再补齐 SEO、公告、页脚链接和导航展示。",
         "configured": "已配置",
         "pending": "待完善",
         "brand": "品牌",
+        "banner": "Banner",
         "support": "客服",
         "seo": "SEO",
         "announcement": "公告"
       }
     },
     "products": {
-      "title": "商品定价",
-      "description": "控制商品是否在分销站展示，并按供货价维护每个规格的固定售价。",
+      "tabs": {"images": "商品图片", "pricing": "商品定价"},
+      "title": "商品管理",
+      "description": "自定义本店商品图片，维护上架状态与售价。",
       "previewStore": "预览分销站",
       "viewOrders": "查看订单",
       "focusTitle": "配置重点",
@@ -1773,5 +1819,48 @@
     "sku_inactive": "规格已停用",
     "product_hidden": "商品整体隐藏",
     "changed": "商品报价已更新，请重新确认价格后提交"
+  },
+  "resellerProductImages": {
+    "description": "可自定义本店商品主图和单张详情图。自定义详情图替换平台详情正文；名称、简介、规格、库存及交付由总店维护。操作后自动保存。",
+    "search": "搜索商品",
+    "searchButton": "搜索",
+    "refresh": "刷新",
+    "upload": "上传图片",
+    "restore": "恢复平台图片",
+    "platform": "使用平台图",
+    "custom": "使用自定义图",
+    "followPlatform": "随平台图片更新",
+    "cover": "封面",
+    "setCover": "设为封面",
+    "previous": "向前移动",
+    "next": "向后移动",
+    "delete": "删除图片",
+    "noImages": "暂无图片",
+    "limits": "支持 PNG、JPG、GIF、WebP，每张最多 500KB，每个商品最多 5 张自定义图片，第一张为封面。",
+    "saving": "正在保存…",
+    "saved": "已保存",
+    "uploading": "正在上传 {current}/{total}…",
+    "countError": "每个商品最多 5 张自定义图片，已上传的图片已保留。",
+    "sizeError": "图片不能为空，每张最多 500KB（512000 字节）。",
+    "formatError": "仅支持 PNG、JPG、GIF 或 WebP 图片。",
+    "refreshed": "已读取当前图片，请检查后重新操作。",
+    "saveFailed": "保存失败，请重试。",
+    "loadFailed": "图片加载失败，请重试。",
+    "refreshFailed": "无法确认保存结果，请先刷新图片。",
+    "waitSaving": "图片正在保存，请稍后离开。",
+    "loading": "正在加载…",
+    "empty": "没有匹配的商品",
+    "imageAlt": "商品图片 {index}",
+    "detailTitle": "商品详情图",
+    "detailDescription": "替换本店的整块详情正文，保留总店商品名称、简介和规格。",
+    "customDetail": "使用自定义详情图",
+    "platformDetail": "使用平台详情",
+    "restoreDetail": "恢复平台详情",
+    "replaceDetail": "替换详情图",
+    "uploadDetail": "上传详情图",
+    "followPlatformDetail": "尚未自定义，当前跟随平台详情正文。",
+    "detailLimits": "仅支持一张 PNG、JPG、GIF 或 WebP 详情图，最多 500KB。上传新图会替换旧图。",
+    "detailCountError": "详情图只能上传一张。",
+    "detailAlt": "自定义商品详情图"
   }
 }

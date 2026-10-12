@@ -4,6 +4,7 @@ import (
 	"time"
 
 	productdomain "github.com/dujiao-next/internal/modules/catalog/product/domain"
+	"github.com/dujiao-next/internal/shared/jsonslice"
 	"github.com/dujiao-next/internal/shared/money"
 )
 
@@ -28,3 +29,18 @@ type ProductSetting struct {
 }
 
 func (ProductSetting) TableName() string { return "reseller_product_settings" }
+
+// ProductImages 独立于定价配置；清空图片时保留行及版本，避免旧窗口覆盖恢复后的配置。
+type ProductImages struct {
+	ID          uint              `gorm:"primarykey"`
+	ResellerID  uint              `gorm:"not null;uniqueIndex:idx_reseller_product_images_scope,priority:1"`
+	ProductID   uint              `gorm:"not null;uniqueIndex:idx_reseller_product_images_scope,priority:2"`
+	Images      jsonslice.Strings `gorm:"type:json;not null"`
+	DetailImage string            `gorm:"type:text;not null;default:''"`
+	Revision    uint64            `gorm:"not null"`
+	OperationID string            `gorm:"type:varchar(36);not null"`
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+func (ProductImages) TableName() string { return "reseller_product_images" }

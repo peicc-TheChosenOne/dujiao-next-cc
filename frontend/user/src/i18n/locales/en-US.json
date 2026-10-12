@@ -700,7 +700,7 @@
       "withdrawEmpty": "No withdraw records",
       "siteConfig": {
         "title": "Site Config",
-        "subtitle": "Manage reseller storefront branding, announcements, support, and SEO",
+        "subtitle": "Manage reseller storefront branding, banners, announcements, support, and SEO",
         "save": "Save Config",
         "saving": "Saving...",
         "loadFailed": "Failed to load site config, please try again later",
@@ -708,6 +708,48 @@
         "saveFailed": "Failed to save site config, please check your input and try again",
         "inactive": "Site config can be edited after reseller access is active.",
         "emptyLinks": "No footer links",
+        "banner": {
+          "title": "Homepage Banner",
+          "description": "Customize the homepage banner for your own reseller store.",
+          "reset": "Restore main store default",
+          "modes": {
+            "inherit": "Use main store default",
+            "custom": "Use my banner",
+            "hidden": "Hide banner"
+          },
+          "modeHints": {
+            "inherit": "Follow the main store banner until you customize your store.",
+            "custom": "Upload your own desktop and mobile homepage images.",
+            "hidden": "Hide the entire banner section on your store homepage."
+          },
+          "desktopImage": "Desktop banner",
+          "mobileImage": "Mobile banner (optional)",
+          "desktopHint": "Recommended: 1920 × 600. JPG / PNG / WebP / GIF supported; compress images before uploading.",
+          "mobileHint": "Recommended: 750 × 600. The desktop image is used when no mobile image is uploaded.",
+          "text": "Banner text",
+          "textHint": "Optional text in Simplified Chinese, Traditional Chinese and English. Leave blank for an image-only banner.",
+          "mainTitle": "Title",
+          "subtitle": "Subtitle",
+          "linkType": "Click action",
+          "linkTypes": {
+            "none": "No link",
+            "internal": "Internal page",
+            "external": "External link"
+          },
+          "linkValue": "Destination",
+          "openInNewTab": "Open in a new window",
+          "preview": "Preview",
+          "devices": {
+            "desktop": "Desktop",
+            "mobile": "Mobile"
+          },
+          "locales": {
+            "simplified": "简体",
+            "traditional": "繁體",
+            "english": "EN"
+          },
+          "emptyPreview": "Upload an image or enter text to preview your banner"
+        },
         "sections": {
           "brand": "Branding",
           "support": "Support Contacts",
@@ -725,6 +767,8 @@
         "tabs": {
           "brand": "Brand",
           "brandDescription": "Name and icons",
+          "banner": "Banner",
+          "bannerDescription": "Homepage image",
           "support": "Support",
           "supportDescription": "Contact channels",
           "content": "Content",
@@ -1357,7 +1401,7 @@
       "apply": "Application",
       "domains": "Domains",
       "site": "Store settings",
-      "products": "Product pricing",
+      "products": "Product management",
       "orders": "Sales orders",
       "finance": "Finance",
       "ledger": "Ledger",
@@ -1457,7 +1501,7 @@
     },
     "site": {
       "title": "Store Settings",
-      "description": "Configure reseller storefront name, announcements, support, navigation, and theme basics.",
+      "description": "Configure reseller storefront name, homepage banner, announcements, support, navigation, and theme basics.",
       "previewStore": "Preview site",
       "cards": {
         "brand": "Brand",
@@ -1471,18 +1515,20 @@
       },
       "readiness": {
         "title": "Setup progress",
-        "description": "Complete branding and support first, then fill in SEO, announcements, footer links, and navigation.",
+        "description": "Complete branding, banner, and support first, then fill in SEO, announcements, footer links, and navigation.",
         "configured": "Configured",
         "pending": "Pending",
         "brand": "Brand",
+        "banner": "Banner",
         "support": "Support",
         "seo": "SEO",
         "announcement": "Announcement"
       }
     },
     "products": {
-      "title": "Product Pricing",
-      "description": "Control storefront visibility and set a fixed retail price for each variant based on its supply price.",
+      "tabs": {"images": "Product images", "pricing": "Product pricing"},
+      "title": "Product management",
+      "description": "Customize your product images and manage listing status and retail prices.",
       "previewStore": "Preview storefront",
       "viewOrders": "View orders",
       "focusTitle": "Configuration focus",
@@ -1773,5 +1819,48 @@
     "sku_inactive": "Variant disabled",
     "product_hidden": "Product hidden",
     "changed": "Product pricing changed. Review the updated price and confirm again."
+  },
+  "resellerProductImages": {
+    "description": "Customize your product gallery and one detail image. A custom detail image replaces the platform detail body. The platform maintains names, descriptions, specifications, stock and fulfillment. Changes save automatically.",
+    "search": "Search products",
+    "searchButton": "Search",
+    "refresh": "Refresh",
+    "upload": "Upload images",
+    "restore": "Restore platform images",
+    "platform": "Platform images",
+    "custom": "Custom images",
+    "followPlatform": "Follows platform updates",
+    "cover": "Cover",
+    "setCover": "Set as cover",
+    "previous": "Move earlier",
+    "next": "Move later",
+    "delete": "Delete image",
+    "noImages": "No images",
+    "limits": "PNG, JPG, GIF or WebP, up to 500KB each and 5 custom images per product. The first image is the cover.",
+    "saving": "Saving…",
+    "saved": "Saved",
+    "uploading": "Uploading {current}/{total}…",
+    "countError": "Up to 5 custom images per product. Successfully uploaded images have been kept.",
+    "sizeError": "Images must not be empty and must be at most 500KB (512000 bytes).",
+    "formatError": "Only PNG, JPG, GIF or WebP images are supported.",
+    "refreshed": "Current images were reloaded. Check them before trying again.",
+    "saveFailed": "Failed to save. Please try again.",
+    "loadFailed": "Failed to load images. Please try again.",
+    "refreshFailed": "Cannot confirm the result. Refresh images before continuing.",
+    "waitSaving": "Images are saving. Please wait before leaving.",
+    "loading": "Loading…",
+    "empty": "No matching products",
+    "imageAlt": "Product image {index}",
+    "detailTitle": "Product detail image",
+    "detailDescription": "Replace the detail body on your storefront while keeping the platform product name, description and specifications.",
+    "customDetail": "Custom detail image",
+    "platformDetail": "Platform details",
+    "restoreDetail": "Restore platform details",
+    "replaceDetail": "Replace detail image",
+    "uploadDetail": "Upload detail image",
+    "followPlatformDetail": "No custom detail image. Following the platform detail body.",
+    "detailLimits": "One PNG, JPG, GIF or WebP detail image, up to 500KB. Uploading a new image replaces the previous one.",
+    "detailCountError": "Upload only one detail image.",
+    "detailAlt": "Custom product detail image"
   }
 }

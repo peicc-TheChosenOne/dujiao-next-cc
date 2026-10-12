@@ -308,6 +308,21 @@ func decodeWebPDimensions(src io.ReadSeeker) (int, int, error) {
 		if chunkSize < 0 {
 			return 0, 0, fmt.Errorf("无效的 WebP chunk")
 		}
+		// 在分配 chunk 缓冲区前验证真实剩余长度，避免小文件伪造巨大 chunk。
+		position, err := src.Seek(0, io.SeekCurrent)
+		if err != nil {
+			return 0, 0, err
+		}
+		end, err := src.Seek(0, io.SeekEnd)
+		if err != nil {
+			return 0, 0, err
+		}
+		if _, err := src.Seek(position, io.SeekStart); err != nil {
+			return 0, 0, err
+		}
+		if int64(chunkSize) > end-position {
+			return 0, 0, fmt.Errorf("WebP chunk 长度超过文件内容")
+		}
 
 		data := make([]byte, chunkSize)
 		if _, err := io.ReadFull(src, data); err != nil {

@@ -5,6 +5,7 @@ import type {
     ResellerOrderListParams,
     ResellerOrderStatsParams,
     ResellerProductSettingUpdatePayload,
+    ResellerProductImagesUpdatePayload,
     ResellerSiteConfigPayload,
     ResellerWithdrawApplyPayload,
 } from './types'
@@ -22,6 +23,24 @@ export const resellerAPI = {
         return userApi.post('/reseller/upload', formData)
     },
     productSettings: (params?: any) => userApi.get('/reseller/product-settings', { params }),
+    productImages: (params?: { page: number; page_size: number; keyword: string }) => userApi.get('/reseller/product-images', { params }),
+    productImageDetail: (productId: number) => userApi.get(`/reseller/product-images/${productId}`),
+    uploadProductImage: (productId: number, file: File, revision: number, operationId: string) => {
+        const data = new FormData()
+        data.append('file', file)
+        data.append('revision', String(revision))
+        data.append('operation_id', operationId)
+        return userApi.post(`/reseller/product-images/${productId}/upload`, data)
+    },
+    updateProductImages: (productId: number, data: ResellerProductImagesUpdatePayload) => userApi.put(`/reseller/product-images/${productId}`, data),
+    uploadProductDetailImage: (productId: number, file: File, revision: number, operationId: string) => {
+        const data = new FormData()
+        data.append('file', file)
+        data.append('revision', String(revision))
+        data.append('operation_id', operationId)
+        return userApi.post(`/reseller/product-images/${productId}/detail/upload`, data)
+    },
+    resetProductDetailImage: (productId: number, data: Pick<ResellerProductImagesUpdatePayload, 'revision' | 'operation_id'>) => userApi.put(`/reseller/product-images/${productId}/detail`, data),
     productSettingDetail: (productId: number) => userApi.get(`/reseller/product-settings/${productId}`),
     updateProductSettings: (productId: number, data: ResellerProductSettingUpdatePayload) =>
         userApi.put(`/reseller/product-settings/${productId}`, data),

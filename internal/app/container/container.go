@@ -172,6 +172,7 @@ type Container struct {
 	ResellerManagementService     *reseller.ManagementService
 	ResellerSiteConfigService     *reseller.SiteConfigService
 	ResellerProductSettingService *reseller.ProductSettingService
+	ResellerProductImageService   *reseller.ProductImageService
 	ResellerAccountingQuery       *reseller.AccountingQueryService
 	ResellerAccountingWithdraw    *reseller.AccountingWithdrawService
 	ResellerAccountingLedger      *reseller.AccountingLedgerService

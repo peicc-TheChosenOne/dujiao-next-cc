@@ -35,7 +35,7 @@
     <form v-else class="space-y-5 pb-20" @submit.prevent="handleSave">
       <div class="space-y-5">
         <div class="rounded-2xl border bg-muted/30 p-2">
-          <div class="grid grid-cols-2 gap-2 lg:grid-cols-4">
+          <div class="grid grid-cols-2 gap-2 lg:grid-cols-5">
             <button
               v-for="section in siteConfigSections"
               :key="section.value"
@@ -87,6 +87,8 @@
         </div>
       </section>
         </div>
+
+        <ResellerBannerSettings v-show="activeSection === 'banner'" v-model="form.banner" />
 
         <div v-show="activeSection === 'support'" class="mt-0">
       <!-- 客服联系方式 -->
@@ -360,6 +362,7 @@ import {
     CircleAlert,
     CircleCheck,
     Info,
+    Image as ImageIcon,
     LifeBuoy,
     Link2,
     Lock,
@@ -388,6 +391,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import ResellerImageField from './ResellerImageField.vue'
+import ResellerBannerSettings from './ResellerBannerSettings.vue'
 import ResellerLocaleTabs from './ResellerLocaleTabs.vue'
 // TipTap 体积较大，异步加载，进入公告编辑时才拉取对应 chunk
 const ResellerRichText = defineAsyncComponent(() => import('./ResellerRichText.vue'))
@@ -400,6 +404,7 @@ import {
     canEditResellerSiteConfig,
     normalizeFooterLinksForForm,
     normalizeLocalizedTextForForm,
+    normalizeResellerBannerForForm,
     type ResellerLocale,
 } from '../../utils/resellerSiteConfig'
 
@@ -421,7 +426,7 @@ const builtinNavKeys = ['blog', 'notice', 'about']
 const localeLabels: Record<string, string> = { 'zh-CN': '简体', 'zh-TW': '繁體', 'en-US': 'EN' }
 
 type SiteConfigSection = {
-    value: 'brand' | 'support' | 'content' | 'navigation'
+    value: 'brand' | 'banner' | 'support' | 'content' | 'navigation'
     label: string
     description: string
     icon: Component
@@ -433,6 +438,12 @@ const siteConfigSections = computed<SiteConfigSection[]>(() => [
         label: t('personalCenter.reseller.siteConfig.tabs.brand'),
         description: t('personalCenter.reseller.siteConfig.tabs.brandDescription'),
         icon: Store,
+    },
+    {
+        value: 'banner',
+        label: t('personalCenter.reseller.siteConfig.tabs.banner'),
+        description: t('personalCenter.reseller.siteConfig.tabs.bannerDescription'),
+        icon: ImageIcon,
     },
     {
         value: 'support',
@@ -497,6 +508,7 @@ const createBlankForm = (): ResellerSiteConfigPayload => ({
     site_name: '',
     logo: '',
     favicon: '',
+    banner: normalizeResellerBannerForForm(),
     announcement: {
         enabled: false,
         type: 'info',
@@ -553,6 +565,7 @@ const assignForm = (config?: ResellerSiteConfigData) => {
         next.site_name = config.site_name || ''
         next.logo = config.logo || ''
         next.favicon = config.favicon || ''
+        next.banner = normalizeResellerBannerForForm(config.banner)
         next.announcement = {
             enabled: config.announcement?.enabled === true,
             type: config.announcement?.type || 'info',

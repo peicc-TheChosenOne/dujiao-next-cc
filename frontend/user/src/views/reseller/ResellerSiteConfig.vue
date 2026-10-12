@@ -63,7 +63,7 @@
           <h2 class="text-sm font-bold text-foreground">{{ t('resellerConsole.site.readiness.title') }}</h2>
           <p class="mt-1 text-sm text-muted-foreground">{{ t('resellerConsole.site.readiness.description') }}</p>
         </div>
-        <div class="grid gap-2 sm:grid-cols-4 lg:min-w-[560px]">
+        <div class="grid grid-cols-2 gap-2 sm:grid-cols-5 lg:min-w-[560px]">
           <div v-for="item in readiness" :key="item.label" class="rounded-xl border bg-muted/30 p-3">
             <ResellerStatusBadge :label="item.done ? t('resellerConsole.site.readiness.configured') : t('resellerConsole.site.readiness.pending')" :tone="item.done ? 'success' : 'warning'" />
             <div class="mt-2 text-sm font-semibold text-foreground">{{ item.label }}</div>
@@ -118,6 +118,7 @@ const supportChannelsReady = computed(() => {
 })
 const readiness = computed(() => [
   { label: t('resellerConsole.site.readiness.brand'), done: Boolean(config.value?.site_name || config.value?.logo || config.value?.favicon) },
+  { label: t('resellerConsole.site.readiness.banner'), done: config.value?.banner?.mode === 'hidden' || (config.value?.banner?.mode === 'custom' && Boolean(config.value.banner.image?.trim())) },
   { label: t('resellerConsole.site.readiness.support'), done: supportChannelsReady.value > 0 },
   { label: t('resellerConsole.site.readiness.seo'), done: isResellerSiteSeoConfigured(config.value?.seo) },
   { label: t('resellerConsole.site.readiness.announcement'), done: Boolean(config.value?.announcement?.enabled) },

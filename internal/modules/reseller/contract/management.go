@@ -127,3 +127,16 @@ type ProductSettingStore interface {
 	ListAdminSettings(filter ProductSettingAdminListFilter) ([]resellerdomain.ProductSetting, int64, error)
 	SummarizeByResellerID(resellerID uint) (ProductSettingSummary, error)
 }
+
+// ProductImageReader 公开商品查询使用批量读取，避免逐商品查询。
+type ProductImageReader interface {
+	ListProductImages(resellerID uint, productIDs []uint) ([]resellerdomain.ProductImages, error)
+}
+
+type ProductImageStore interface {
+	ProductImageReader
+	GetProfileByUserID(userID uint) (*resellerdomain.Profile, error)
+	ListProductsWithSettings(filter ProductSettingListFilter) ([]ProductSettingProductRow, int64, error)
+	GetProductWithSettings(resellerID, productID uint) (*ProductSettingProductRow, error)
+	SaveProductImages(config resellerdomain.ProductImages, expectedRevision uint64) error
+}

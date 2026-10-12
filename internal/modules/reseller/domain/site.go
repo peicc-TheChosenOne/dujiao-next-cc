@@ -33,6 +33,7 @@ type SiteConfig struct {
 	SiteName         string       `gorm:"type:varchar(120)" json:"site_name"`
 	Logo             string       `gorm:"type:varchar(500)" json:"logo"`
 	Favicon          string       `gorm:"type:varchar(500)" json:"favicon"`
+	BannerJSON       jsonmap.JSON `gorm:"type:json" json:"banner_json"`
 	AnnouncementJSON jsonmap.JSON `gorm:"type:json" json:"announcement_json"`
 	SupportJSON      jsonmap.JSON `gorm:"type:json" json:"support_json"`
 	SEOJSON          jsonmap.JSON `gorm:"type:json" json:"seo_json"`

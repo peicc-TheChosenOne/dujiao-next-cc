@@ -45,6 +45,7 @@ type adminSiteConfigRequest struct {
 	SiteName     string                                   `json:"site_name"`
 	Logo         string                                   `json:"logo"`
 	Favicon      string                                   `json:"favicon"`
+	Banner       *resellermodule.ResellerBannerInput      `json:"banner"`
 	Announcement resellermodule.ResellerAnnouncementInput `json:"announcement"`
 	Support      resellermodule.ResellerSupportInput      `json:"support"`
 	SEO          resellermodule.ResellerSEOInput          `json:"seo"`
@@ -57,6 +58,7 @@ func (req adminSiteConfigRequest) toInput() resellermodule.ResellerSiteConfigInp
 		SiteName:     req.SiteName,
 		Logo:         req.Logo,
 		Favicon:      req.Favicon,
+		Banner:       req.Banner,
 		Announcement: req.Announcement,
 		Support:      req.Support,
 		SEO:          req.SEO,
@@ -131,11 +133,15 @@ func (h *AdminSiteConfigHandler) UpdateSiteConfig(c *gin.Context) {
 	if reloaded, reloadErr := h.directory.GetSiteConfigByResellerID(resellerID); reloadErr == nil && reloaded != nil {
 		row = reloaded
 	}
+	changedFields := []string{"site_name", "logo", "favicon", "announcement", "support", "seo", "footer_links", "nav_config"}
+	if req.Banner != nil {
+		changedFields = append(changedFields, "banner")
+	}
 	h.recordAudit(c, "reseller_site_config_update", "/admin/resellers/site-configs/:reseller_id", "PUT", jsonmap.JSON{
 		"reseller_id":    resellerID,
 		"config_id":      row.ID,
 		"site_name":      row.SiteName,
-		"changed_fields": []string{"site_name", "logo", "favicon", "announcement", "support", "seo", "footer_links", "nav_config"},
+		"changed_fields": changedFields,
 		"source":         "admin",
 	})
 	response.Success(c, dto.NewAdminResellerSiteConfigResp(row))

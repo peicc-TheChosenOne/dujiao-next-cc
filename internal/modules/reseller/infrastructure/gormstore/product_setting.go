@@ -6,13 +6,66 @@ import (
 	"strings"
 	"time"
 
+	productcontract "github.com/dujiao-next/internal/modules/catalog/product/contract"
 	productdomain "github.com/dujiao-next/internal/modules/catalog/product/domain"
 	resellercontract "github.com/dujiao-next/internal/modules/reseller/contract"
 	resellerdomain "github.com/dujiao-next/internal/modules/reseller/domain"
 	"github.com/dujiao-next/internal/persistence/gormutil"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
+
+func (r *Store) ListProductImages(resellerID uint, productIDs []uint) ([]resellerdomain.ProductImages, error) {
+	rows := []resellerdomain.ProductImages{}
+	if resellerID == 0 || len(productIDs) == 0 {
+		return rows, nil
+	}
+	err := r.db.Where("reseller_id = ? AND product_id IN ?", resellerID, productIDs).Find(&rows).Error
+	return rows, err
+}
+
+// SaveProductImages 仅做短事务：重新校验范围并原子比较版本，不在事务中上传文件。
+func (r *Store) SaveProductImages(config resellerdomain.ProductImages, expectedRevision uint64) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		var profile resellerdomain.Profile
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND status = ? AND deleted_at IS NULL", config.ResellerID, resellerdomain.ProfileStatusActive).First(&profile).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return resellercontract.ErrProfileInactive
+			}
+			return err
+		}
+		var product productdomain.Product
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND is_active = ? AND deleted_at IS NULL", config.ProductID, true).
+			Where("EXISTS (SELECT 1 FROM categories c WHERE c.id = products.category_id AND c.is_active = ? AND c.deleted_at IS NULL)", true).First(&product).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return productcontract.ErrNotFound
+			}
+			return err
+		}
+		config.Revision = expectedRevision + 1
+		if expectedRevision == 0 {
+			result := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "reseller_id"}, {Name: "product_id"}}, DoNothing: true}).Create(&config)
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected != 1 {
+				return resellercontract.ErrProductImagesChanged
+			}
+			return nil
+		}
+		result := tx.Model(&resellerdomain.ProductImages{}).
+			Where("reseller_id = ? AND product_id = ? AND revision = ?", config.ResellerID, config.ProductID, expectedRevision).
+			Updates(map[string]interface{}{"images": config.Images, "detail_image": config.DetailImage, "revision": config.Revision, "operation_id": config.OperationID, "updated_at": time.Now()})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return resellercontract.ErrProductImagesChanged
+		}
+		return nil
+	})
+}
 
 func (r *Store) ListProductsWithSettings(filter resellercontract.ProductSettingListFilter) ([]resellercontract.ProductSettingProductRow, int64, error) {
 	if filter.ResellerID == 0 {

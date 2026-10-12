@@ -830,10 +830,22 @@ export interface AdminResellerLocalizedText {
   [key: string]: string | undefined
 }
 
+export interface AdminResellerBannerConfig {
+  mode: 'inherit' | 'custom' | 'hidden'
+  image: string
+  mobile_image: string
+  title: AdminResellerLocalizedText
+  subtitle: AdminResellerLocalizedText
+  link_type: 'none' | 'internal' | 'external'
+  link_value: string
+  open_in_new_tab: boolean
+}
+
 export interface AdminResellerSiteConfigPayload {
   site_name?: string
   logo?: string
   favicon?: string
+  banner?: AdminResellerBannerConfig | null
   announcement?: {
     enabled?: boolean
     type?: string
@@ -874,6 +886,7 @@ export interface AdminResellerSiteConfig extends Required<Pick<AdminResellerSite
   site_name: string
   logo: string
   favicon: string
+  banner?: AdminResellerBannerConfig | null
   footer_links: Array<{
     name?: AdminResellerLocalizedText
     url?: string

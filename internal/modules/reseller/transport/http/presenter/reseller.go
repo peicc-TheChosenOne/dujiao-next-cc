@@ -11,6 +11,38 @@ import (
 	"github.com/dujiao-next/internal/shared/jsonmap"
 )
 
+type ResellerProductImagesResp struct {
+	Product struct {
+		ID    uint         `json:"id"`
+		Title jsonmap.JSON `json:"title"`
+		Slug  string       `json:"slug"`
+	} `json:"product"`
+	PlatformImages    []string `json:"platform_images"`
+	CustomImages      []string `json:"custom_images"`
+	EffectiveImages   []string `json:"effective_images"`
+	ImageSource       string   `json:"image_source"`
+	CustomDetailImage string   `json:"custom_detail_image"`
+	DetailImageSource string   `json:"detail_image_source"`
+	Revision          uint64   `json:"revision"`
+	OperationID       string   `json:"operation_id"`
+}
+
+func NewResellerProductImagesResp(product productdomain.Product, config resellerdomain.ProductImages) ResellerProductImagesResp {
+	resp := ResellerProductImagesResp{PlatformImages: append([]string{}, product.Images...), CustomImages: append([]string{}, config.Images...), Revision: config.Revision, OperationID: config.OperationID, ImageSource: "platform"}
+	resp.Product.ID, resp.Product.Title, resp.Product.Slug = product.ID, product.TitleJSON, product.Slug
+	resp.CustomDetailImage = config.DetailImage
+	resp.DetailImageSource = "platform"
+	if config.DetailImage != "" {
+		resp.DetailImageSource = "custom"
+	}
+	resp.EffectiveImages = append([]string{}, resp.PlatformImages...)
+	if len(resp.CustomImages) > 0 {
+		resp.ImageSource = "custom"
+		resp.EffectiveImages = append([]string{}, resp.CustomImages...)
+	}
+	return resp
+}
+
 type ResellerProfileSummaryResp struct {
 	ID               uint      `json:"id"`
 	Status           string    `json:"status"`
@@ -98,6 +130,7 @@ type ResellerSiteConfigResp struct {
 	SiteName     string        `json:"site_name"`
 	Logo         string        `json:"logo"`
 	Favicon      string        `json:"favicon"`
+	Banner       jsonmap.JSON  `json:"banner"`
 	Announcement jsonmap.JSON  `json:"announcement"`
 	Support      jsonmap.JSON  `json:"support"`
 	SEO          jsonmap.JSON  `json:"seo"`
@@ -132,6 +165,7 @@ type AdminResellerSiteConfigResp struct {
 	SiteName     string                            `json:"site_name"`
 	Logo         string                            `json:"logo"`
 	Favicon      string                            `json:"favicon"`
+	Banner       jsonmap.JSON                      `json:"banner"`
 	Announcement jsonmap.JSON                      `json:"announcement"`
 	Support      jsonmap.JSON                      `json:"support"`
 	SEO          jsonmap.JSON                      `json:"seo"`
@@ -306,6 +340,7 @@ func NewResellerSiteConfigResp(row *resellerdomain.SiteConfig) *ResellerSiteConf
 		SiteName:     row.SiteName,
 		Logo:         row.Logo,
 		Favicon:      row.Favicon,
+		Banner:       row.BannerJSON,
 		Announcement: row.AnnouncementJSON,
 		Support:      row.SupportJSON,
 		SEO:          row.SEOJSON,
@@ -366,6 +401,7 @@ func NewAdminResellerSiteConfigResp(row *resellerdomain.SiteConfig) AdminReselle
 		SiteName:     row.SiteName,
 		Logo:         row.Logo,
 		Favicon:      row.Favicon,
+		Banner:       row.BannerJSON,
 		Announcement: row.AnnouncementJSON,
 		Support:      row.SupportJSON,
 		SEO:          row.SEOJSON,

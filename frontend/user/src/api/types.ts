@@ -252,10 +252,22 @@ export interface ResellerLocalizedText {
     'en-US': string
 }
 
+export interface ResellerBannerConfig {
+    mode: 'inherit' | 'custom' | 'hidden'
+    image: string
+    mobile_image: string
+    title: ResellerLocalizedText
+    subtitle: ResellerLocalizedText
+    link_type: 'none' | 'internal' | 'external'
+    link_value: string
+    open_in_new_tab: boolean
+}
+
 export interface ResellerSiteConfigPayload {
     site_name: string
     logo?: string
     favicon?: string
+    banner?: ResellerBannerConfig | null
     announcement?: {
         enabled: boolean
         type: string
@@ -359,6 +371,24 @@ export interface ResellerProductSettingPayloadItem {
 
 export interface ResellerProductSettingUpdatePayload {
     settings: ResellerProductSettingPayloadItem[]
+}
+
+export interface ResellerProductImagesData {
+    product: { id: number; title: Record<string, string>; slug: string }
+    platform_images: string[]
+    custom_images: string[]
+    effective_images: string[]
+    image_source: 'platform' | 'custom'
+    custom_detail_image: string
+    detail_image_source: 'platform' | 'custom'
+    revision: number
+    operation_id: string
+}
+
+export interface ResellerProductImagesUpdatePayload {
+    images: string[]
+    revision: number
+    operation_id: string
 }
 
 export interface ResellerProductSettingPreviewItem {

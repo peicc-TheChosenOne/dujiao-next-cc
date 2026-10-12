@@ -3,7 +3,10 @@ package contract
 import "errors"
 
 var (
-	ErrPricingChanged = errors.New("reseller pricing changed")
+	ErrProductImagesChanged = errors.New("reseller product images changed")
+	ErrProductImagesInvalid = errors.New("reseller product images invalid")
+	ErrProductImagesLimit   = errors.New("reseller product images limit exceeded")
+	ErrPricingChanged       = errors.New("reseller pricing changed")
 	// ErrNotOpened 表示用户尚未开通分销商资料。
 	ErrNotOpened = errors.New("reseller not opened")
 	// ErrProfileInactive 表示分销商资料未处于可用状态。
