@@ -64,6 +64,7 @@ type ManagementStore interface {
 	WithinManagementTransaction(fn func(store ManagementStore) error) error
 	GetProfileByUserID(userID uint) (*resellerdomain.Profile, error)
 	GetProfileByID(id uint) (*resellerdomain.Profile, error)
+	GetProfileByIDForUpdate(id uint) (*resellerdomain.Profile, error)
 	CreateProfile(profile *resellerdomain.Profile) error
 	UpdateProfile(profile *resellerdomain.Profile) error
 	ListDomainsByResellerID(resellerID uint) ([]resellerdomain.Domain, error)

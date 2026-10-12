@@ -93,7 +93,7 @@ func TestResellerManagementApplyDisabledConfigRejects(t *testing.T) {
 	}
 }
 
-func TestResellerManagementApproveActivatesProfileWithoutAutoSubdomain(t *testing.T) {
+func TestResellerManagementApproveActivatesProfileWithAutoSubdomain(t *testing.T) {
 	db := openResellerManagementServiceTestDB(t)
 	user := seedResellerManagementUser(t, db, "approve-reseller@example.test")
 	svc := newResellerManagementServiceForTest(db)
@@ -112,15 +112,15 @@ func TestResellerManagementApproveActivatesProfileWithoutAutoSubdomain(t *testin
 	if approved.Profile.Status != resellerdomain.ProfileStatusActive || approved.Profile.ReviewedBy == nil || *approved.Profile.ReviewedBy != 9 {
 		t.Fatalf("unexpected approved profile: %+v", approved.Profile)
 	}
-	if approved.SystemDomain != nil {
-		t.Fatalf("expected approval to skip automatic system domain, got %+v", approved.SystemDomain)
+	if approved.SystemDomain == nil || approved.SystemDomain.Domain != fmt.Sprintf("r%d.shop.example.test", profile.ID) || !approved.SystemDomain.IsPrimary || approved.SystemDomain.Status != resellerdomain.DomainStatusActive || approved.SystemDomain.VerificationStatus != resellerdomain.DomainVerificationVerified {
+		t.Fatalf("unexpected automatic system domain: %+v", approved.SystemDomain)
 	}
 	var count int64
 	if err := db.Model(&resellerdomain.Domain{}).Where("reseller_id = ?", profile.ID).Count(&count).Error; err != nil {
 		t.Fatalf("count domains failed: %v", err)
 	}
-	if count != 0 {
-		t.Fatalf("expected no domains after approval, got %d", count)
+	if count != 1 {
+		t.Fatalf("expected one domain after approval, got %d", count)
 	}
 }
 
@@ -249,15 +249,7 @@ func TestResellerManagementDisablePrimaryDomainPromotesNextActiveVerifiedDomain(
 		t.Fatalf("approve profile failed: %v", err)
 	}
 	now := time.Now()
-	primary := resellerdomain.Domain{
-		ResellerID:         approved.Profile.ID,
-		Domain:             "primary.shop.example.test",
-		Type:               resellerdomain.DomainTypeSubdomain,
-		Status:             resellerdomain.DomainStatusActive,
-		VerificationStatus: resellerdomain.DomainVerificationVerified,
-		IsPrimary:          true,
-		VerifiedAt:         &now,
-	}
+	primary := *approved.SystemDomain
 	secondary := resellerdomain.Domain{
 		ResellerID:         approved.Profile.ID,
 		Domain:             "secondary.shop.example.test",
@@ -266,9 +258,6 @@ func TestResellerManagementDisablePrimaryDomainPromotesNextActiveVerifiedDomain(
 		VerificationStatus: resellerdomain.DomainVerificationVerified,
 		IsPrimary:          false,
 		VerifiedAt:         &now,
-	}
-	if err := db.Create(&primary).Error; err != nil {
-		t.Fatalf("create primary domain failed: %v", err)
 	}
 	if err := db.Create(&secondary).Error; err != nil {
 		t.Fatalf("create secondary domain failed: %v", err)

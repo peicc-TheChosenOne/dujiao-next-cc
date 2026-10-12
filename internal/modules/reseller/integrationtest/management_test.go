@@ -144,7 +144,7 @@ func seedAdminResellerManagementProfile(t *testing.T, db *gorm.DB, status string
 	return profile
 }
 
-func TestAdminResellerManagementApproveProfileActivatesWithoutAutoDomain(t *testing.T) {
+func TestAdminResellerManagementApproveProfileReturnsAutoDomain(t *testing.T) {
 	h, db := setupAdminResellerManagementHandlerTest(t)
 	profile := seedAdminResellerManagementProfile(t, db, resellerdomain.ProfileStatusPendingReview)
 	c, recorder := newAdminResellerManagementContext(http.MethodPost, fmt.Sprintf("/admin/resellers/profiles/%d/approve", profile.ID), strings.NewReader(`{"default_markup_percent":"8.00","max_markup_percent":"40.00"}`))
@@ -158,8 +158,26 @@ func TestAdminResellerManagementApproveProfileActivatesWithoutAutoDomain(t *test
 	if err := db.Model(&resellerdomain.Domain{}).Where("reseller_id = ?", profile.ID).Count(&domainCount).Error; err != nil {
 		t.Fatalf("count domains failed: %v", err)
 	}
-	if domainCount != 0 {
-		t.Fatalf("expected approval to skip automatic domain creation, got %d domains", domainCount)
+	if domainCount != 1 {
+		t.Fatalf("expected one automatic domain, got %d domains", domainCount)
+	}
+	var payload struct {
+		Data struct {
+			SystemDomain    resellerdomain.Domain `json:"system_domain"`
+			AlreadyApproved bool                  `json:"already_approved"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode approval: %v", err)
+	}
+	if payload.Data.AlreadyApproved || payload.Data.SystemDomain.Domain != fmt.Sprintf("r%d.shop.example.test", profile.ID) {
+		t.Fatalf("unexpected approval payload: %s", recorder.Body.String())
+	}
+	repeated, repeatedRecorder := newAdminResellerManagementContext(http.MethodPost, fmt.Sprintf("/admin/resellers/profiles/%d/approve", profile.ID), strings.NewReader(`{"default_markup_percent":"25.00","max_markup_percent":"50.00"}`))
+	repeated.Params = c.Params
+	adminResellerManagementHTTP(h).ApproveProfile(repeated)
+	if err := json.Unmarshal(repeatedRecorder.Body.Bytes(), &payload); err != nil || !payload.Data.AlreadyApproved {
+		t.Fatalf("expected idempotent approval: err=%v body=%s", err, repeatedRecorder.Body.String())
 	}
 	var auditCount int64
 	if err := db.Model(&auditlogdomain.AuthzAuditLog{}).Where("action = ?", "reseller_profile_approve").Count(&auditCount).Error; err != nil {

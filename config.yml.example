@@ -178,6 +178,8 @@ reseller:
   # false 时使用原始 Host；true 时优先使用 X-Forwarded-Host。
   trusted_forwarded_host: false
   # 管理员为分销商分配系统二级域名时使用的基础域名，例如 hello.{subdomain_base}。
+  # 配置后，审核通过会自动分配 r{分销商ID}.{subdomain_base}；已有系统域名优先复用。
+  # 将统一入口域名（例如 entry.example.com）加入 main_hosts，避免分配给分销商。
   # 生产启用前请配置为已经做好 wildcard DNS/TLS 的域名，例如 shop.example.com。
   subdomain_base: ""
   # 是否允许普通用户在个人中心自助提交分销商申请。

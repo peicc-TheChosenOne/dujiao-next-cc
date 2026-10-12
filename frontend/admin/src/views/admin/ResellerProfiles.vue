@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { onBeforeRouteLeave } from 'vue-router'
 import { useDebounceFn } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import { adminAPI } from '@/api/admin'
-import type { AdminResellerProfile } from '@/api/types'
+import type { AdminResellerProfile, AdminResellerProfileApproveResult } from '@/api/types'
 import {
   RESELLER_PROFILE_STATUS_ACTIVE,
   RESELLER_PROFILE_STATUS_DISABLED,
@@ -14,7 +15,8 @@ import {
 } from '@/constants/reseller'
 import IdCell from '@/components/IdCell.vue'
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogHeader, DialogScrollContent, DialogTitle } from '@/components/ui/dialog'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Dialog, DialogDescription, DialogHeader, DialogScrollContent, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -26,7 +28,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { confirmAction } from '@/utils/confirm'
 import { notifyError, notifySuccess } from '@/utils/notify'
 import { formatDate, toRFC3339 } from '@/utils/format'
-import { getResellerProfileActionState, getResellerProfileStatusKey } from '@/utils/resellerManagement'
+import { approveResellerProfiles, getResellerProfileActionState, getResellerProfileStatusKey, type ResellerApprovalResult } from '@/utils/resellerManagement'
 import { adminUrl } from '@/utils/adminBase'
 
 const { t } = useI18n()
@@ -39,6 +41,31 @@ const showReasonDialog = ref(false)
 const showEditDialog = ref(false)
 const reasonAction = ref<'reject' | 'disable'>('reject')
 const rows = ref<AdminResellerProfile[]>([])
+const selectedIds = ref<number[]>([])
+const showBatchDialog = ref(false)
+const batchRunning = ref(false)
+const batchIds = ref<number[]>([])
+const batchResults = ref<ResellerApprovalResult[]>([])
+const approvableRows = computed(() => rows.value.filter((row) => getResellerProfileActionState(row.status).canApprove))
+const selectAllState = computed(() => {
+  if (!selectedIds.value.length) return false
+  return selectedIds.value.length === approvableRows.value.length ? true : 'indeterminate' as const
+})
+const batchFailures = computed(() => batchResults.value.filter((result) => result.status === 'failed'))
+const batchSummary = computed(() => ({
+  approved: batchResults.value.filter((result) => result.status === 'approved').length,
+  alreadyApproved: batchResults.value.filter((result) => result.status === 'alreadyApproved').length,
+  failed: batchFailures.value.length,
+}))
+watch(rows, () => {
+  selectedIds.value = selectedIds.value.filter((id) => approvableRows.value.some((row) => row.id === id))
+})
+onBeforeRouteLeave(() => {
+  if (batchRunning.value) {
+    notifyError(t('admin.resellerProfiles.batch.busy'))
+    return false
+  }
+})
 const pagination = ref({
   page: 1,
   page_size: 20,
@@ -75,6 +102,7 @@ const reasonForm = reactive({
 })
 
 const fetchRows = async (page = 1, options: ListFetchOptions = {}) => {
+  if (batchRunning.value) return
   if (!options.preserveRows) loading.value = true
   try {
     const response = await adminAPI.getResellerProfiles({
@@ -111,6 +139,7 @@ const changePage = (page: number) => {
 }
 
 const changePageSize = (size: number) => {
+  if (batchRunning.value) return
   if (size === pagination.value.page_size) return
   pagination.value.page_size = size
   fetchRows(1)
@@ -165,17 +194,58 @@ const submitApproveProfile = async () => {
   if (!validateMarkupRange(approveForm.defaultMarkup, approveForm.maxMarkup)) return
   operatingId.value = row.id
   try {
-    await adminAPI.approveResellerProfile(row.id, {
+    const response = await adminAPI.approveResellerProfile(row.id, {
       default_markup_percent: approveForm.defaultMarkup.trim() || '0.00',
       max_markup_percent: approveForm.maxMarkup.trim() || '0.00',
     })
     showApproveDialog.value = false
-    notifySuccess(t('admin.resellerProfiles.actions.approveSuccess'))
+    const result = response.data.data as AdminResellerProfileApproveResult
+    notifySuccess(result.already_approved
+      ? t('admin.resellerProfiles.batch.alreadyApproved')
+      : result.system_domain
+        ? t('admin.resellerProfiles.actions.approveDomainSuccess', { domain: result.system_domain.domain })
+        : t('admin.resellerProfiles.actions.approveSuccess'))
     await fetchRows(pagination.value.page, { preserveRows: true })
   } catch (err: any) {
     notifyError(err?.message || t('admin.resellerProfiles.actions.approveFailed'))
   } finally {
     operatingId.value = null
+  }
+}
+
+const selectProfile = (id: number, checked: boolean | 'indeterminate') => {
+  selectedIds.value = checked === true ? [...new Set([...selectedIds.value, id])] : selectedIds.value.filter((selected) => selected !== id)
+}
+
+const openBatchApproval = () => {
+  batchIds.value = [...selectedIds.value]
+  batchResults.value = []
+  approveForm.defaultMarkup = '0.00'
+  approveForm.maxMarkup = '0.00'
+  showBatchDialog.value = true
+}
+
+const submitBatchApproval = async (retry = false) => {
+  if (batchRunning.value || !validateMarkupRange(approveForm.defaultMarkup, approveForm.maxMarkup)) return
+  const ids = retry ? batchFailures.value.map((result) => result.id) : [...batchIds.value]
+  if (!ids.length) return
+  const preserved = retry ? batchResults.value.filter((result) => result.status !== 'failed') : []
+  const payload = {
+    default_markup_percent: approveForm.defaultMarkup.trim() || '0.00',
+    max_markup_percent: approveForm.maxMarkup.trim() || '0.00',
+  }
+  batchResults.value = preserved
+  batchRunning.value = true
+  try {
+    await approveResellerProfiles(ids, async (id) => {
+      const response = await adminAPI.approveResellerProfile(id, payload)
+      const result = response.data.data as AdminResellerProfileApproveResult
+      return { alreadyApproved: result.already_approved, domain: result.system_domain?.domain }
+    }, (results) => { batchResults.value = [...preserved, ...results] })
+  } finally {
+    batchRunning.value = false
+    selectedIds.value = batchFailures.value.map((result) => result.id)
+    await fetchRows(pagination.value.page, { preserveRows: true })
   }
 }
 
@@ -268,6 +338,11 @@ onMounted(() => {
       <h1 class="text-2xl font-semibold">{{ t('admin.resellerProfiles.title') }}</h1>
     </div>
 
+    <div v-if="selectedIds.length" class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card px-4 py-3">
+      <span class="text-sm">{{ t('admin.resellerProfiles.batch.selected', { count: selectedIds.length }) }}</span>
+      <Button :disabled="batchRunning || operatingId !== null" @click="openBatchApproval">{{ t('admin.resellerProfiles.batch.approve') }}</Button>
+    </div>
+
     <div class="rounded-xl border border-border bg-card p-4 shadow-sm">
       <div class="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
         <div class="w-full md:w-56">
@@ -317,6 +392,9 @@ onMounted(() => {
       <Table class="min-w-[1280px]">
         <TableHeader class="border-b border-border bg-muted/40 text-xs uppercase text-muted-foreground">
           <TableRow>
+            <TableHead class="w-12 px-4 py-3">
+              <Checkbox :model-value="selectAllState" :disabled="batchRunning || operatingId !== null || !approvableRows.length" :aria-label="t('admin.resellerProfiles.batch.selectAll')" @update:model-value="(checked) => selectedIds = checked === true ? approvableRows.map((row) => row.id) : []" />
+            </TableHead>
             <TableHead class="px-6 py-3">{{ t('admin.resellerProfiles.table.id') }}</TableHead>
             <TableHead class="min-w-[200px] px-6 py-3">{{ t('admin.resellerProfiles.table.user') }}</TableHead>
             <TableHead class="px-6 py-3">{{ t('admin.resellerProfiles.table.status') }}</TableHead>
@@ -332,14 +410,17 @@ onMounted(() => {
         </TableHeader>
         <TableBody class="divide-y divide-border">
           <TableRow v-if="loading">
-            <TableCell :colspan="11" class="p-0">
-              <TableSkeleton :columns="11" :rows="5" />
+            <TableCell :colspan="12" class="p-0">
+              <TableSkeleton :columns="12" :rows="5" />
             </TableCell>
           </TableRow>
           <TableRow v-else-if="rows.length === 0">
-            <TableCell colspan="11" class="px-6 py-8 text-center text-muted-foreground">{{ t('admin.resellerProfiles.empty') }}</TableCell>
+            <TableCell colspan="12" class="px-6 py-8 text-center text-muted-foreground">{{ t('admin.resellerProfiles.empty') }}</TableCell>
           </TableRow>
           <TableRow v-for="item in rows" :key="item.id" class="hover:bg-muted/30">
+            <TableCell class="px-4 py-4">
+              <Checkbox :model-value="selectedIds.includes(item.id)" :disabled="batchRunning || operatingId !== null || !getResellerProfileActionState(item.status).canApprove" :aria-label="t('admin.resellerProfiles.batch.selectProfile', { id: item.id })" @update:model-value="(checked) => selectProfile(item.id, checked)" />
+            </TableCell>
             <TableCell class="px-6 py-4">
               <IdCell :value="item.id" />
             </TableCell>
@@ -392,7 +473,7 @@ onMounted(() => {
                 </Button>
                 <Button
                   size="sm"
-                  :disabled="operatingId === item.id || !getResellerProfileActionState(item.status).canApprove"
+                  :disabled="batchRunning || operatingId === item.id || !getResellerProfileActionState(item.status).canApprove"
                   @click="openApproveDialog(item)"
                 >
                   {{ t('admin.resellerProfiles.actions.approve') }}
@@ -437,6 +518,42 @@ onMounted(() => {
         @change-page-size="changePageSize"
       />
     </div>
+
+    <Dialog :open="showBatchDialog" @update:open="(open) => { if (!batchRunning) showBatchDialog = open }">
+      <DialogScrollContent class="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>{{ t('admin.resellerProfiles.batch.title', { count: batchIds.length }) }}</DialogTitle>
+          <DialogDescription>{{ t('admin.resellerProfiles.batch.description') }}</DialogDescription>
+        </DialogHeader>
+        <div class="grid gap-4 sm:grid-cols-2">
+          <div class="grid gap-2">
+            <Label>{{ t('admin.resellerProfiles.table.defaultMarkup') }}</Label>
+            <Input v-model="approveForm.defaultMarkup" :disabled="batchRunning || batchResults.length > 0" inputmode="decimal" placeholder="0.00" />
+          </div>
+          <div class="grid gap-2">
+            <Label>{{ t('admin.resellerProfiles.table.maxMarkup') }}</Label>
+            <Input v-model="approveForm.maxMarkup" :disabled="batchRunning || batchResults.length > 0" inputmode="decimal" placeholder="0.00" />
+          </div>
+        </div>
+        <p class="text-xs text-muted-foreground">{{ t('admin.resellerProfiles.actions.maxMarkupZeroHint') }}</p>
+        <p v-if="batchRunning" role="status" class="text-sm">{{ t('admin.resellerProfiles.batch.progress', { completed: batchResults.length, total: batchIds.length }) }}</p>
+        <div v-if="batchResults.length" class="space-y-3">
+          <p role="status" class="text-sm font-medium">{{ t('admin.resellerProfiles.batch.result', batchSummary) }}</p>
+          <ul class="max-h-64 space-y-2 overflow-y-auto text-sm">
+            <li v-for="result in batchResults" :key="result.id" class="rounded-lg border border-border p-3">
+              <span :class="result.status === 'failed' ? 'text-destructive' : 'text-foreground'">R#{{ result.id }} · {{ t(`admin.resellerProfiles.batch.${result.status}`) }}</span>
+              <a v-if="result.domain" :href="`https://${result.domain}`" target="_blank" rel="noopener noreferrer" class="ml-2 break-all text-primary underline">{{ result.domain }}</a>
+              <p v-if="result.status === 'failed'" class="mt-1 text-destructive">{{ result.message || t('admin.resellerProfiles.actions.approveFailed') }}</p>
+            </li>
+          </ul>
+        </div>
+        <div class="flex flex-wrap justify-end gap-2">
+          <Button variant="outline" :disabled="batchRunning" @click="showBatchDialog = false">{{ t('admin.resellerProfiles.batch.close') }}</Button>
+          <Button v-if="!batchResults.length" :disabled="batchRunning" @click="submitBatchApproval()">{{ t('admin.resellerProfiles.batch.confirm', { count: batchIds.length }) }}</Button>
+          <Button v-else-if="batchFailures.length" :disabled="batchRunning" @click="submitBatchApproval(true)">{{ t('admin.resellerProfiles.batch.retry') }}</Button>
+        </div>
+      </DialogScrollContent>
+    </Dialog>
 
     <Dialog v-model:open="showApproveDialog">
       <DialogScrollContent class="w-[calc(100vw-1rem)] max-w-md p-4 sm:p-6">

@@ -154,16 +154,18 @@ func (h *AdminManagementHandler) ApproveProfile(c *gin.Context) {
 		respondAdminManagementError(c, err)
 		return
 	}
-	h.recordAudit(c, "reseller_profile_approve", "/admin/resellers/profiles/:id/approve", gin.H{
-		"profile_id":  id,
-		"reseller_id": id,
-		"next_status": resellerdomain.ProfileStatusActive,
-	})
+	if !result.AlreadyApproved {
+		h.recordAudit(c, "reseller_profile_approve", "/admin/resellers/profiles/:id/approve", gin.H{
+			"profile_id":  id,
+			"reseller_id": id,
+			"next_status": resellerdomain.ProfileStatusActive,
+		})
+	}
 	var systemDomain any
 	if result.SystemDomain != nil {
 		systemDomain = dto.NewResellerDomainResp(result.SystemDomain)
 	}
-	response.Success(c, gin.H{"profile": result.Profile, "system_domain": systemDomain})
+	response.Success(c, gin.H{"profile": result.Profile, "system_domain": systemDomain, "already_approved": result.AlreadyApproved})
 }
 
 // UpdateProfile 更新分销商运营配置。

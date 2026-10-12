@@ -29,3 +29,28 @@ export const getResellerDomainActionState = (status?: string) => ({
   canApprove: status === RESELLER_DOMAIN_STATUS_PENDING_REVIEW || status === RESELLER_DOMAIN_STATUS_DISABLED,
   canDisable: status === RESELLER_DOMAIN_STATUS_PENDING_REVIEW || status === RESELLER_DOMAIN_STATUS_ACTIVE,
 })
+
+export interface ResellerApprovalResult {
+  id: number
+  status: 'approved' | 'alreadyApproved' | 'failed'
+  domain?: string
+  message?: string
+}
+
+export const approveResellerProfiles = async (
+  ids: number[],
+  approve: (id: number) => Promise<{ alreadyApproved?: boolean; domain?: string }>,
+  onProgress: (results: ResellerApprovalResult[]) => void,
+): Promise<ResellerApprovalResult[]> => {
+  const results: ResellerApprovalResult[] = []
+  for (const id of new Set(ids)) {
+    try {
+      const result = await approve(id)
+      results.push({ id, status: result.alreadyApproved ? 'alreadyApproved' : 'approved', domain: result.domain })
+    } catch (error) {
+      results.push({ id, status: 'failed', message: error instanceof Error ? error.message : '' })
+    }
+    onProgress([...results])
+  }
+  return results
+}

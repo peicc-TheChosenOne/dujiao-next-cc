@@ -4,6 +4,7 @@ import {
   getResellerDomainActionState,
   getResellerProfileActionState,
   getResellerProfileStatusKey,
+  approveResellerProfiles,
 } from '../src/utils/resellerManagement.ts'
 
 test('admin reseller profile status keys map backend values', () => {
@@ -12,6 +13,27 @@ test('admin reseller profile status keys map backend values', () => {
   assert.equal(getResellerProfileStatusKey('rejected'), 'rejected')
   assert.equal(getResellerProfileStatusKey('disabled'), 'disabled')
   assert.equal(getResellerProfileStatusKey('other'), 'unknown')
+})
+
+test('batch approval continues after failure, reports progress, and skips duplicate IDs', async () => {
+  const calls: number[] = []
+  const progress: number[] = []
+  let active = 0
+  const results = await approveResellerProfiles([1, 2, 3, 1], async (id) => {
+    assert.equal(active++, 0, 'approvals must run sequentially')
+    await Promise.resolve()
+    active--
+    calls.push(id)
+    if (id === 2) throw new Error('Domain already assigned')
+    return { alreadyApproved: id === 3, domain: `r${id}.example.test` }
+  }, (results) => progress.push(results.length))
+  assert.deepEqual(calls, [1, 2, 3])
+  assert.deepEqual(progress, [1, 2, 3])
+  assert.deepEqual(results.map((result) => result.status), ['approved', 'failed', 'alreadyApproved'])
+  assert.equal(results[1]?.message, 'Domain already assigned')
+  const retried = await approveResellerProfiles(results.filter((result) => result.status === 'failed').map((result) => result.id), async (id) => ({ domain: `r${id}.example.test` }), () => {})
+  assert.deepEqual(retried.map((result) => result.id), [2])
+  assert.equal(retried[0]?.status, 'approved')
 })
 
 test('admin reseller profile actions follow review state', () => {

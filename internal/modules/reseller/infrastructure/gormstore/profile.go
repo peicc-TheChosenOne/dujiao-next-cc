@@ -9,6 +9,7 @@ import (
 	resellerdomain "github.com/dujiao-next/internal/modules/reseller/domain"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // CreateProfile 创建分销商资料。
@@ -21,11 +22,24 @@ func (r *Store) CreateProfile(profile *resellerdomain.Profile) error {
 
 // GetProfileByID 按 ID 获取分销商资料。
 func (r *Store) GetProfileByID(id uint) (*resellerdomain.Profile, error) {
+	return r.getProfileByID(id, false)
+}
+
+// GetProfileByIDForUpdate 锁定资料，串行处理同一分销商的审核和域名分配。
+func (r *Store) GetProfileByIDForUpdate(id uint) (*resellerdomain.Profile, error) {
+	return r.getProfileByID(id, true)
+}
+
+func (r *Store) getProfileByID(id uint, forUpdate bool) (*resellerdomain.Profile, error) {
 	if id == 0 {
 		return nil, nil
 	}
+	query := r.db
+	if forUpdate {
+		query = query.Clauses(clause.Locking{Strength: "UPDATE"})
+	}
 	var profile resellerdomain.Profile
-	if err := r.db.Preload("User", "deleted_at IS NULL").
+	if err := query.Preload("User", "deleted_at IS NULL").
 		Where("reseller_profiles.id = ? AND reseller_profiles.deleted_at IS NULL", id).
 		First(&profile).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {

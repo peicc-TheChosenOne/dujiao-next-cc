@@ -996,6 +996,12 @@ export interface AdminResellerProfileApprovePayload {
   max_markup_percent?: string
 }
 
+export interface AdminResellerProfileApproveResult {
+  profile: AdminResellerProfile
+  system_domain: AdminResellerDomain | null
+  already_approved: boolean
+}
+
 export interface AdminResellerProfileUpdatePayload {
   default_markup_percent?: string
   max_markup_percent?: string
