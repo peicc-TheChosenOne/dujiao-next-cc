@@ -6,6 +6,24 @@ uploads
 *.db
 *.log
 .env
+.env.*
+!.env.example
+!.env.*.example
+config.yaml
+config.*.yml
+config.*.yaml
+*.pem
+*.key
+*.ppk
+logs/
+backups/
+secrets/
+__pycache__/
+*.py[cod]
+/server
+/server.exe
+/dujiao-next
+/dujiao-next.exe
 .DS_Store
 node_modules/
 # Added by goreleaser init:
@@ -31,3 +49,7 @@ deploy/ESA接入记录*.md
 deploy/大陆访问诊断*.md
 deploy/二开内容盘点.zh.md
 deploy/*.local.md
+
+# 本地分析、运行记录和生成素材，不属于产品源码。
+docs/
+output/

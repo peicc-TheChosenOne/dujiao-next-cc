@@ -37,7 +37,7 @@ application: the Go backend, the customer storefront, and the admin panel.
 | Backend | Go 1.26 · Gin · GORM · SQLite / PostgreSQL |
 | Auth | JWT (separate admin / user realms) · Casbin RBAC · TOTP 2FA |
 | Async | asynq on Redis (optional — the server runs without it) |
-| Config | Viper (`config.yml`) |
+| Config | Viper (`config.yml` + ignored `config.private.yml` + environment overrides) |
 | Frontend | Vue 3 · Vite · TypeScript · Tailwind CSS v4 · pnpm 10 |
 | Admin UI | shadcn-vue / reka-ui |
 
@@ -67,6 +67,7 @@ application: the Go backend, the customer storefront, and the admin panel.
 │   ├── admin/                # admin panel SPA        (dev :5174)
 │   └── user/                 # customer storefront SPA (dev :5173)
 ├── config.yml.example
+├── config.private.yml.example # credentials and connection-address template
 ├── Dockerfile                # single full-stack image
 └── .goreleaser.yaml
 ```
@@ -215,7 +216,9 @@ Download the latest `dujiao-next_*.tar.gz` from [Releases](https://github.com/pe
 ```bash
 tar -xzf dujiao-next_*.tar.gz
 cp config.yml.example config.yml
-# edit config.yml: set jwt.secret, user_jwt.secret, and web.admin_path
+cp config.private.yml.example config.private.yml
+# set ordinary runtime options in config.yml; fill credentials and connection addresses in config.private.yml
+# use three independent strong keys for app.secret_key, jwt.secret and user_jwt.secret
 ./dujiao-next
 ```
 
@@ -224,10 +227,23 @@ Full instructions: https://dujiao-next.com/deploy/
 Or with Docker:
 
 ```bash
-docker run -d -p 8080:8080 -v $PWD/config.yml:/app/config.yml:ro dujiaonext/dujiao-next:latest
+# Replace vX.Y.Z with the release tag checked out in this source directory.
+docker build --build-arg APP_VERSION=vX.Y.Z -t dujiao-next:vX.Y.Z .
+docker run -d -p 8080:8080 -v $PWD/config.yml:/app/config.yml:ro -v $PWD/config.private.yml:/app/config.private.yml:ro dujiao-next:vX.Y.Z
 ```
 
 ## Quick Start (Develop)
+
+The backend loads defaults, `config.yml`, its sibling `config.private.yml`, then environment
+variables, in that order. Both runtime files stay outside Git and Docker build contexts;
+only the `.example` templates are committed. Existing single-file installations still work.
+Missing optional private files are allowed; an invalid private file or an explicitly selected
+missing file stops startup without logging its contents.
+
+Set `DUJIAO_CONFIG_FILE` and `DUJIAO_PRIVATE_CONFIG_FILE` when selecting files outside the
+working directory. Do not use the Git branch to select credentials automatically: local
+development and production deployments keep their own runtime files. Never regenerate
+`app.secret_key` during an upgrade; stored secrets require the existing key for decryption.
 
 Run the backend and the two frontends separately for hot reload:
 
@@ -246,6 +262,16 @@ development-only concern.
 > target directory and will pick the wrong version — `cd` into the package first.
 
 ## Building the Full-Stack Binary
+
+Run `python3 scripts/check-release-safety.py` before preparing a release. It rejects runtime
+files in Git inputs, public IP literals in deployment templates, production frontend `.env`
+files, and an expanded release archive allowlist. An optional `--archives dist` also checks
+built archives. These checks do not replace a review of history or server-side settings.
+
+Development is on `codex/dev`; production is on `codex/deploy-aiccpay`. Version tags must
+point to commits merged into production. The release workflow reruns the complete CI
+workflow before publishing. Configuration, database data and uploaded files are managed on
+the target server and are never replaced by the release archive.
 
 ```bash
 goreleaser build --snapshot --single-target --clean

@@ -1,0 +1,38 @@
+# 私有运行配置示例。本文件可提交；复制后的 config.private.yml 不得提交或打包。
+# 在开发机和生产服务器分别填写各自的值，不随分支合并覆盖服务器配置。
+# 加载优先级：默认值 < config.yml < config.private.yml < 环境变量。
+# 三个密钥必须彼此独立；已有环境的 app.secret_key 必须保留，改值会影响历史数据解密。
+app:
+  secret_key: ""
+jwt:
+  secret: ""
+user_jwt:
+  secret: ""
+
+database:
+  # 默认与普通示例的 SQLite 配置一致。
+  # PostgreSQL：同时把 config.yml 的 database.driver 改成 postgres，在此填写完整连接串。
+  # 连接串示例：host=127.0.0.1 port=5432 user=app password=CHANGE_ME dbname=appdb sslmode=disable
+  dsn: ./db/dujiao.db
+
+redis:
+  host: 127.0.0.1
+  port: 6379
+  password: ""
+queue:
+  host: 127.0.0.1
+  port: 6379
+  password: ""
+
+bootstrap:
+  default_admin_password: ""
+email:
+  password: ""
+telegram_auth:
+  bot_token: ""
+  client_secret: ""
+captcha:
+  turnstile:
+    secret_key: ""
+
+# 真实代理地址、分销域名或其他环境专属配置也可以放在本文件中，覆盖普通配置。

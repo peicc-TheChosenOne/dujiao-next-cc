@@ -8,6 +8,7 @@ on:
       - codex/dev
       - codex/deploy-aiccpay
   pull_request:
+  workflow_call:
 
 permissions:
   contents: read
@@ -17,6 +18,17 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  release-safety:
+    name: Verify release inputs
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test release safety checks
+        run: python3 -m unittest discover -s scripts/tests -p '*_test.py'
+      - name: Check source and archive allowlist
+        run: python3 scripts/check-release-safety.py
+
   installer:
     name: Verify installer
     runs-on: ubuntu-latest

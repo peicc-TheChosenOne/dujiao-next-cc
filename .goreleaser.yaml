@@ -12,6 +12,7 @@ project_name: dujiao-next
 # 另外 hooks 不经过 shell，`cd X && y` 这种写法必须显式包一层 sh -c 才会生效。
 before:
   hooks:
+    - python3 scripts/check-release-safety.py
     - go mod tidy
     - sh -c 'cd frontend/admin && pnpm install --frozen-lockfile'
     - sh -c 'cd frontend/user  && pnpm install --frozen-lockfile'
@@ -35,6 +36,7 @@ builds:
     ldflags:
       - -s -w -X github.com/dujiao-next/internal/version.Version={{.Tag}} -X github.com/dujiao-next/internal/version.BuildType=release
     flags:
+      - "-trimpath"
       - "-tags=release,fullstack"
     goos:
       - linux
@@ -51,6 +53,7 @@ archives:
     formats: [tar.gz]
     files:
       - ./config.yml.example
+      - ./config.private.yml.example
       - ./README.md
       - ./scripts/dujiao-next-manager.sh
     name_template: >-

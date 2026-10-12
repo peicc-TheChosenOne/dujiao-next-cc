@@ -12,11 +12,11 @@
    ```
 
 2. 将本目录的 `.env.example` 复制为 `.env`，把 `APP_IMAGE` 设置为刚构建的镜像；生产环境应固定经过验证的镜像版本或摘要。
-3. 在本目录创建 `config/`、`secrets/`、`data/uploads/` 和 `data/logs/`。将根目录 `config.yml.example` 复制到 `config/config.yml`，填写实际配置。
+3. 在本目录创建 `config/`、`secrets/`、`data/uploads/` 和 `data/logs/`。将根目录 `config.yml.example` 复制到 `config/config.yml`，将 `config.private.yml.example` 复制到 `secrets/config.private.yml`。普通参数写在前者，真实连接地址、密码、JWT 和加密密钥写在后者；两者只保存在部署机器，不进入仓库或镜像。
 4. 分别生成 PostgreSQL 管理密码、应用数据库密码和 Redis 密码，保存为 `secrets/postgres_password`、`secrets/app_db_password`、`secrets/redis_password`。密码文件只保存密码本身，不提交到 Git。
 5. 在 `config/redis-users.acl` 中配置 Redis 用户，例如 `user default on >替换为Redis密码 ~* &* +@all`。ACL 密码与 Redis 密码文件保持一致。
 
-应用配置需要同步调整：
+应用配置需要同步调整，下面的敏感值写入 `secrets/config.private.yml`：
 
 - `app.secret_key`、`jwt.secret`、`user_jwt.secret`：分别使用独立的强随机值。
 - `database.driver`：`postgres`；DSN 使用容器主机 `postgres`、端口 `5432`、示例数据库 `appdb` 和示例用户 `app`，密码与应用数据库密码文件一致。若调整数据库名称或用户，须同步修改 Compose 和初始化脚本。
@@ -26,7 +26,9 @@
 - `server.mode`：生产使用 `release`；可信代理列表须依据实际网络填写。
 - `web.admin_path`、站点域名、SMTP 和其他业务设置：按自己的环境配置。
 
-建议使用 `openssl rand -hex 32` 分别生成密码与密钥，配置文件权限设置为仅管理员可读。
+首次部署建议使用 `openssl rand -hex 32` 分别生成密码与密钥，私有文件权限设为 `0600`，并确保运行用户能读取。已有环境拆分配置时原值迁移，尤其不得重新生成 `app.secret_key`；数据库中的历史加密数据依赖该密钥。
+
+应用按默认值、`config.yml`、`config.private.yml`、环境变量的顺序覆盖配置。Compose 只读挂载普通配置和私有配置。服务器自己的两份配置不随版本升级覆盖；本地开发机保留自己的两份文件，分支合并只同步代码和脱敏模板。旧版单文件部署仍兼容；要采用本模板的新挂载项，先准备私有文件再启动容器。
 
 ## 启动与访问
 

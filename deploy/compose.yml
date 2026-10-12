@@ -11,6 +11,7 @@ services:
       - 127.0.0.1:8080:8080
     volumes:
       - ./config/config.yml:/app/config.yml:ro
+      - ./secrets/config.private.yml:/app/config.private.yml:ro
       - ./data/uploads:/app/uploads
       - ./data/logs:/app/logs
     depends_on:

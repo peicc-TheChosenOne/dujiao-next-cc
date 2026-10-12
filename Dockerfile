@@ -66,6 +66,7 @@ RUN apk --no-cache add ca-certificates tzdata \
 
 COPY --from=builder /out/dujiao-next /app/dujiao-next
 COPY config.yml.example /app/config.yml.example
+COPY config.private.yml.example /app/config.private.yml.example
 
 EXPOSE 8080
 
