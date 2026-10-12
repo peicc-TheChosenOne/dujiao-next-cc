@@ -7,8 +7,8 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-func applySupplyQuote(sku *productdomain.ProductSKU, supply, minimum, suggested money.OptionalAmount) error {
-	for _, patch := range []money.OptionalAmount{supply, minimum, suggested} {
+func applySupplyQuote(sku *productdomain.ProductSKU, supply, minimum money.OptionalAmount) error {
+	for _, patch := range []money.OptionalAmount{supply, minimum} {
 		if patch.Set && patch.Value != nil && (!patch.Value.GreaterThan(decimal.Zero) || !patch.Value.Equal(patch.Value.Round(2))) {
 			return productcontract.ErrProductPriceInvalid
 		}
@@ -18,12 +18,11 @@ func applySupplyQuote(sku *productdomain.ProductSKU, supply, minimum, suggested 
 	}
 	sku.SupplyPriceAmount = supply.Apply(sku.SupplyPriceAmount)
 	sku.MinSalePriceAmount = minimum.Apply(sku.MinSalePriceAmount)
-	sku.SuggestedSalePriceAmount = suggested.Apply(sku.SuggestedSalePriceAmount)
 	return nil
 }
 
 func (s *WriteService) saveSingleSupplyQuote(repo SKURepository, productID uint, input CreateProductInput) error {
-	if !input.SupplyPriceAmount.Set && !input.MinSalePriceAmount.Set && !input.SuggestedSalePriceAmount.Set {
+	if !input.SupplyPriceAmount.Set && !input.MinSalePriceAmount.Set {
 		return nil
 	}
 	rows, err := repo.ListByProduct(productID, false)
@@ -33,7 +32,7 @@ func (s *WriteService) saveSingleSupplyQuote(repo SKURepository, productID uint,
 	if len(rows) != 1 {
 		return productcontract.ErrProductSKUInvalid
 	}
-	if err := applySupplyQuote(&rows[0], input.SupplyPriceAmount, input.MinSalePriceAmount, input.SuggestedSalePriceAmount); err != nil {
+	if err := applySupplyQuote(&rows[0], input.SupplyPriceAmount, input.MinSalePriceAmount); err != nil {
 		return err
 	}
 	return persistSupplyQuote(repo, &rows[0])

@@ -19,7 +19,6 @@ type SupplyQuote struct {
 	Supply    *money.Amount `json:"supply_price_amount"`
 	Minimum   money.Amount  `json:"min_sale_price_amount"`
 	Maximum   *money.Amount `json:"max_sale_price_amount"`
-	Suggested *money.Amount `json:"suggested_sale_price_amount"`
 	Retail    money.Amount  `json:"sale_price_amount"`
 	Draft     money.Amount  `json:"draft_price_amount"`
 	Profit    money.Amount  `json:"profit_amount"`
@@ -30,7 +29,7 @@ type SupplyQuote struct {
 }
 
 func ResolveSupplyQuote(profile *resellerdomain.Profile, sku productdomain.ProductSKU, parent, setting *resellerdomain.ProductSetting) SupplyQuote {
-	q := SupplyQuote{Supply: sku.SupplyPriceAmount, Suggested: sku.SuggestedSalePriceAmount}
+	q := SupplyQuote{Supply: sku.SupplyPriceAmount}
 	if setting != nil && setting.PricingMode == resellerdomain.PricingModeFixedPrice {
 		q.Retail = setting.FixedPriceAmount
 	}
@@ -42,9 +41,8 @@ func ResolveSupplyQuote(profile *resellerdomain.Profile, sku productdomain.Produ
 		if sku.MinSalePriceAmount != nil && sku.MinSalePriceAmount.GreaterThan(q.Minimum.Decimal) {
 			q.Minimum = *sku.MinSalePriceAmount
 		}
-		q.Draft = *q.Supply
+		q.Draft = q.Minimum
 		if profile != nil {
-			q.Draft = money.FromDecimal(q.Supply.Mul(decimal.NewFromInt(100).Add(profile.DefaultMarkupPercent.Decimal)).Div(decimal.NewFromInt(100)))
 			if profile.MaxMarkupPercent.GreaterThan(decimal.Zero) {
 				maximum := money.FromDecimal(q.Supply.Mul(decimal.NewFromInt(100).Add(profile.MaxMarkupPercent.Decimal)).Div(decimal.NewFromInt(100)).Truncate(2))
 				q.Maximum = &maximum

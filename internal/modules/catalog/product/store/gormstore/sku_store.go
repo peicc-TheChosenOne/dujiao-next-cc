@@ -117,15 +117,14 @@ func (r *SKUStore) Update(item *productdomain.ProductSKU) error {
 	if item == nil {
 		return errors.New("sku is nil")
 	}
-	return r.db.Omit("SupplyPriceAmount", "MinSalePriceAmount", "SuggestedSalePriceAmount").Save(item).Error
+	return r.db.Omit("SupplyPriceAmount", "MinSalePriceAmount").Save(item).Error
 }
 
 // UpdateSupplyQuote writes only the manually managed reseller quote.
 func (r *SKUStore) UpdateSupplyQuote(item *productdomain.ProductSKU) error {
 	return r.db.Model(&productdomain.ProductSKU{}).Where("id = ? AND deleted_at IS NULL", item.ID).Updates(map[string]interface{}{
-		"supply_price_amount":         item.SupplyPriceAmount,
-		"min_sale_price_amount":       item.MinSalePriceAmount,
-		"suggested_sale_price_amount": item.SuggestedSalePriceAmount,
+		"supply_price_amount":   item.SupplyPriceAmount,
+		"min_sale_price_amount": item.MinSalePriceAmount,
 	}).Error
 }
 

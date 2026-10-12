@@ -742,3 +742,81 @@ func testSupplyMigration(t *testing.T, db *gorm.DB) {
 		}
 	}
 }
+
+func TestRemoveSuggestedSalePriceSQLite(t *testing.T) {
+	testRemoveSuggestedSalePrice(t, setupRegistryMigrationTestDB(t))
+}
+
+func TestRemoveSuggestedSalePricePostgres(t *testing.T) {
+	dsn := os.Getenv("TEST_POSTGRES_DSN")
+	if dsn == "" {
+		t.Skip("TEST_POSTGRES_DSN is empty")
+	}
+	base, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	schema := fmt.Sprintf("remove_suggested_sale_price_%d", time.Now().UnixNano())
+	if err := base.Exec("CREATE SCHEMA " + schema).Error; err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		base.Exec("DROP SCHEMA " + schema + " CASCADE")
+		conn, _ := base.DB()
+		conn.Close()
+	})
+	db, err := gorm.Open(postgres.Open(dsn+" search_path="+schema), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { conn, _ := db.DB(); conn.Close() })
+	testRemoveSuggestedSalePrice(t, db)
+}
+
+func testRemoveSuggestedSalePrice(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	for _, sql := range []string{
+		`CREATE TABLE product_skus (id INTEGER PRIMARY KEY, supply_price_amount DECIMAL(20,2), min_sale_price_amount DECIMAL(20,2), suggested_sale_price_amount DECIMAL(20,2), price_amount DECIMAL(20,2), cost_price_amount DECIMAL(20,2), manual_stock_total INTEGER)`,
+		`CREATE INDEX idx_sku_supply ON product_skus (supply_price_amount)`,
+		`CREATE TABLE linked_skus (sku_id INTEGER REFERENCES product_skus(id))`,
+		`INSERT INTO product_skus VALUES (1, 80.01, 85, 100, 120, 60, 7)`,
+		`INSERT INTO linked_skus VALUES (1)`,
+	} {
+		if err := db.Exec(sql).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	sql, err := os.ReadFile("../../../../deploy/migrations/remove_suggested_sale_price.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(string(sql)).Error; err != nil {
+		t.Fatal(err)
+	}
+	if db.Migrator().HasColumn(&productdomain.ProductSKU{}, "suggested_sale_price_amount") {
+		t.Fatal("suggested price column still exists")
+	}
+	if !db.Migrator().HasIndex(&productdomain.ProductSKU{}, "idx_sku_supply") {
+		t.Fatal("removing suggested price removed an unrelated index")
+	}
+	var sku struct {
+		SupplyPriceAmount  money.Amount
+		MinSalePriceAmount money.Amount
+		PriceAmount        money.Amount
+		CostPriceAmount    money.Amount
+		ManualStockTotal   int
+	}
+	if err := db.Table("product_skus").First(&sku, "id = ?", 1).Error; err != nil {
+		t.Fatal(err)
+	}
+	if sku.SupplyPriceAmount.String() != "80.01" || sku.MinSalePriceAmount.String() != "85.00" || sku.PriceAmount.String() != "120.00" || sku.CostPriceAmount.String() != "60.00" || sku.ManualStockTotal != 7 {
+		t.Fatalf("removing suggested price changed SKU data: %+v", sku)
+	}
+	var count int64
+	if err := db.Table("linked_skus").Count(&count).Error; err != nil || count != 1 {
+		t.Fatalf("linked SKU data changed: count=%d error=%v", count, err)
+	}
+	if err := db.Exec("INSERT INTO linked_skus VALUES (2)").Error; err == nil {
+		t.Fatal("removing suggested price removed a foreign key")
+	}
+}

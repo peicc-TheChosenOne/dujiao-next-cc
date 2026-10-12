@@ -29,7 +29,6 @@ export interface AdminCategory {
 export interface AdminProductSKU {
     supply_price_amount?: string | null
     min_sale_price_amount?: string | null
-    suggested_sale_price_amount?: string | null
   id: number
   product_id: number
   sku_code: string
@@ -928,7 +927,6 @@ export interface AdminResellerProductSettingSKU {
     supply_price_amount: string | null
     min_sale_price_amount: string
     max_sale_price_amount: string | null
-    suggested_sale_price_amount: string | null
     sale_price_amount: string
     draft_price_amount: string
     profit_amount: string

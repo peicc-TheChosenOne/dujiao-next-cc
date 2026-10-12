@@ -96,7 +96,6 @@ type SKUFormItem = {
   cost_price_amount: number
   supply_price_amount: string
   min_sale_price_amount: string
-  suggested_sale_price_amount: string
   manual_stock_total: number
   is_active: boolean
   sort_order: number
@@ -151,7 +150,6 @@ const createSKUFormItem = (raw?: Partial<AdminProductSKU>): SKUFormItem => ({
   cost_price_amount: Number(raw?.cost_price_amount || 0),
   supply_price_amount: raw?.supply_price_amount ?? "",
   min_sale_price_amount: raw?.min_sale_price_amount ?? "",
-  suggested_sale_price_amount: raw?.suggested_sale_price_amount ?? "",
   manual_stock_total: toSafeStockTotal(raw?.manual_stock_total),
   is_active: raw?.is_active ?? true,
   sort_order: Number(raw?.sort_order || 0),
@@ -169,7 +167,6 @@ const form = reactive({
   cost_price_amount: 0,
   supply_price_amount: '',
   min_sale_price_amount: '',
-  suggested_sale_price_amount: '',
   images: [] as string[],
   tags: [] as string[],
   purchase_type: 'member',
@@ -452,7 +449,7 @@ const removeSKU = (index: number) => {
   form.skus.splice(index, 1)
 }
 
-const quoteFields = (item: { supply_price_amount: string; min_sale_price_amount: string; suggested_sale_price_amount: string }) => {
+const quoteFields = (item: { supply_price_amount: string; min_sale_price_amount: string }) => {
   const parse = (value: string) => {
     const text = String(value).trim()
     if (!text) return null
@@ -462,7 +459,6 @@ const quoteFields = (item: { supply_price_amount: string; min_sale_price_amount:
   return {
     supply_price_amount: parse(item.supply_price_amount),
     min_sale_price_amount: parse(item.min_sale_price_amount),
-    suggested_sale_price_amount: parse(item.suggested_sale_price_amount),
   }
 }
 
@@ -529,7 +525,6 @@ const resetForm = () => {
     cost_price_amount: 0,
     supply_price_amount: '',
     min_sale_price_amount: '',
-    suggested_sale_price_amount: '',
     images: [],
     tags: [],
     purchase_type: 'member',
@@ -580,7 +575,6 @@ const populateForm = (product: AdminProduct) => {
     cost_price_amount: Number(product.cost_price_amount || 0),
     supply_price_amount: product.skus?.length === 1 ? product.skus[0]?.supply_price_amount ?? "" : "",
     min_sale_price_amount: product.skus?.length === 1 ? product.skus[0]?.min_sale_price_amount ?? "" : "",
-    suggested_sale_price_amount: product.skus?.length === 1 ? product.skus[0]?.suggested_sale_price_amount ?? "" : "",
     images: imagesList,
     tags: tagsList,
     purchase_type: product.purchase_type || 'member',
@@ -1053,10 +1047,9 @@ watch(
                   </div>
                 </div>
               </div>
-              <div class="grid gap-3 md:grid-cols-3">
+              <div class="grid gap-3 md:grid-cols-2">
                 <div><Label>{{ t('admin.supplyPricing.supply') }}</Label><Input v-model="sku.supply_price_amount" inputmode="decimal" /></div>
                 <div><Label>{{ t('admin.supplyPricing.minimum') }}</Label><Input v-model="sku.min_sale_price_amount" inputmode="decimal" /></div>
-                <div><Label>{{ t('admin.supplyPricing.suggested') }}</Label><Input v-model="sku.suggested_sale_price_amount" inputmode="decimal" /></div>
               </div>
               <p class="text-xs text-muted-foreground">{{ t('admin.supplyPricing.description') }}</p>
             </div>
@@ -1096,10 +1089,9 @@ watch(
           </div>
 
           <div v-if="!form.skus.length" class="col-span-1 space-y-2 md:col-span-2">
-            <div class="grid gap-3 md:grid-cols-3">
+            <div class="grid gap-3 md:grid-cols-2">
               <div><Label>{{ t('admin.supplyPricing.supply') }}</Label><Input v-model="form.supply_price_amount" inputmode="decimal" /></div>
               <div><Label>{{ t('admin.supplyPricing.minimum') }}</Label><Input v-model="form.min_sale_price_amount" inputmode="decimal" /></div>
-              <div><Label>{{ t('admin.supplyPricing.suggested') }}</Label><Input v-model="form.suggested_sale_price_amount" inputmode="decimal" /></div>
             </div>
             <p class="text-xs text-muted-foreground">{{ t('admin.supplyPricing.description') }}</p>
           </div>

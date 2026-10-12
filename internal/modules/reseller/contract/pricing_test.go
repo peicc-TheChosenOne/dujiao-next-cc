@@ -55,7 +55,7 @@ func TestSupplyQuoteFloorCapFixedPriceAndDefaultDraft(t *testing.T) {
 	profile.DefaultMarkupPercent = *amount("50")
 	sku.PriceAmount = *amount("999")
 	q = ResolveSupplyQuote(profile, sku, nil, setting)
-	if q.Retail.String() != "87.00" || q.Draft.String() != "120.02" || q.Revision != before {
+	if q.Retail.String() != "87.00" || q.Draft.String() != "85.00" || q.Revision != before {
 		t.Fatal("defaults/main retail must not reprice saved retail", q)
 	}
 	sku.MinSalePriceAmount = nil
@@ -88,5 +88,31 @@ func TestSupplyQuoteFloorCapFixedPriceAndDefaultDraft(t *testing.T) {
 	q = ResolveSupplyQuote(profile, sku, nil, setting)
 	if q.ErrorCode != "supply_below_cost" || q.CanSell || q.Minimum.String() != "55.00" || q.Retail.String() != "88.02" {
 		t.Fatal("cost increases must preserve retail and the displayed floor", q)
+	}
+}
+
+func TestUnpricedSupplyQuotePrefillsMinimumWithoutListing(t *testing.T) {
+	amount := func(value string) *money.Amount { a := money.FromDecimal(decimal.RequireFromString(value)); return &a }
+	profile := &resellerdomain.Profile{Status: resellerdomain.ProfileStatusActive, DefaultMarkupPercent: *amount("50"), MaxMarkupPercent: *amount("20")}
+	sku := productdomain.ProductSKU{ID: 1, IsActive: true, SupplyPriceAmount: amount("80.01"), MinSalePriceAmount: amount("85")}
+	for _, setting := range []*resellerdomain.ProductSetting{
+		nil,
+		{IsListed: false, PricingMode: resellerdomain.PricingModeInherit},
+		{IsListed: true, PricingMode: resellerdomain.PricingModeFixedPrice},
+	} {
+		q := ResolveSupplyQuote(profile, sku, nil, setting)
+		if q.Draft.String() != "85.00" || q.Retail.String() != "0.00" || q.CanSell || q.Valid || q.ErrorCode != "unpriced" {
+			t.Fatalf("minimum must remain an unsaved draft: %+v", q)
+		}
+	}
+	sku.MinSalePriceAmount = nil
+	q := ResolveSupplyQuote(profile, sku, nil, nil)
+	if q.Draft.String() != "80.01" || q.Draft.String() != q.Minimum.String() {
+		t.Fatal("an empty minimum must prefill supply price", q)
+	}
+	sku.SupplyPriceAmount = nil
+	q = ResolveSupplyQuote(profile, sku, nil, nil)
+	if q.Draft.String() != "0.00" || q.ErrorCode != "supply_missing" || q.CanSell {
+		t.Fatal("missing supply must not produce a sellable draft", q)
 	}
 }

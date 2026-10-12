@@ -490,8 +490,7 @@ const messages = {
       supplyPricing: {
         supply: '统一供货价',
         minimum: '最低售价（选填）',
-        suggested: '建议售价（选填）',
-        description: '供货价留空时不对分销商销售；最低售价留空时，售价不能低于供货价。建议售价仅用于快速填写。',
+        description: '供货价留空时不对分销商销售；最低售价留空时，售价不能低于供货价。',
         invalid: '报价须为正金额，最多两位小数',
         hidden: '商品级开关仅控制展示，售价按规格保存',
         visibilityOnly: '仅控制商品展示',
@@ -4954,8 +4953,7 @@ const messages = {
       supplyPricing: {
         supply: '統一供貨價',
         minimum: '最低售價（選填）',
-        suggested: '建議售價（選填）',
-        description: '供貨價留空時不對分銷商銷售；最低售價留空時，售價不能低於供貨價。建議售價僅用於快速填寫。',
+        description: '供貨價留空時不對分銷商銷售；最低售價留空時，售價不能低於供貨價。',
         invalid: '報價須為正金額，最多兩位小數',
         hidden: '商品級開關僅控制展示，售價按規格儲存',
         visibilityOnly: '僅控制商品展示',
@@ -9418,8 +9416,7 @@ const messages = {
       supplyPricing: {
         supply: 'Unified supply price',
         minimum: 'Minimum retail price (optional)',
-        suggested: 'Suggested retail price (optional)',
-        description: 'An empty supply price disables reseller sales. An empty minimum requires retail at least equal to supply. Suggested prices only fill drafts.',
+        description: 'An empty supply price disables reseller sales. An empty minimum requires retail at least equal to supply.',
         invalid: 'Enter a positive amount with at most two decimal places',
         hidden: 'The product switch only controls visibility. Retail prices are saved per variant.',
         visibilityOnly: 'Product visibility only',

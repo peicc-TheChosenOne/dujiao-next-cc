@@ -87,19 +87,18 @@ func NewWriteService(options Options) *WriteService {
 
 // CreateProductInput 创建或完整更新商品的输入。
 type CreateProductInput struct {
-	CategoryID               uint
-	Slug                     string
-	SeoMetaJSON              map[string]interface{}
-	TitleJSON                map[string]interface{}
-	DescriptionJSON          map[string]interface{}
-	ContentJSON              map[string]interface{}
-	InstructionsJSON         map[string]interface{}
-	ManualFormSchemaJSON     map[string]interface{}
-	PriceAmount              decimal.Decimal
-	CostPriceAmount          decimal.Decimal
-	SupplyPriceAmount        money.OptionalAmount
-	MinSalePriceAmount       money.OptionalAmount
-	SuggestedSalePriceAmount money.OptionalAmount
+	CategoryID           uint
+	Slug                 string
+	SeoMetaJSON          map[string]interface{}
+	TitleJSON            map[string]interface{}
+	DescriptionJSON      map[string]interface{}
+	ContentJSON          map[string]interface{}
+	InstructionsJSON     map[string]interface{}
+	ManualFormSchemaJSON map[string]interface{}
+	PriceAmount          decimal.Decimal
+	CostPriceAmount      decimal.Decimal
+	SupplyPriceAmount    money.OptionalAmount
+	MinSalePriceAmount   money.OptionalAmount
 	// WholesalePrices 为可选字段：nil 表示更新时保留，非 nil 表示整体覆盖。
 	WholesalePrices     *[]productdomain.WholesalePriceInput
 	Images              []string
@@ -119,17 +118,16 @@ type CreateProductInput struct {
 
 // ProductSKUInput 描述商品 SKU 的完整写入值。
 type ProductSKUInput struct {
-	ID                       uint
-	SKUCode                  string
-	SpecValuesJSON           map[string]interface{}
-	PriceAmount              decimal.Decimal
-	CostPriceAmount          decimal.Decimal
-	SupplyPriceAmount        money.OptionalAmount
-	MinSalePriceAmount       money.OptionalAmount
-	SuggestedSalePriceAmount money.OptionalAmount
-	ManualStockTotal         int
-	IsActive                 *bool
-	SortOrder                int
+	ID                 uint
+	SKUCode            string
+	SpecValuesJSON     map[string]interface{}
+	PriceAmount        decimal.Decimal
+	CostPriceAmount    decimal.Decimal
+	SupplyPriceAmount  money.OptionalAmount
+	MinSalePriceAmount money.OptionalAmount
+	ManualStockTotal   int
+	IsActive           *bool
+	SortOrder          int
 }
 
 func (s *WriteService) filterAvailablePaymentChannelIDs(ids []uint) ([]uint, error) {

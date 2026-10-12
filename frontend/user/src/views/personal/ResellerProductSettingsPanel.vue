@@ -14,7 +14,7 @@ import { useLocalized } from '../../composables/useProduct'
 import { normalizeResellerProductSettingsPagination } from '../../utils/resellerProductSettings'
 import { formatSkuSpecValues } from '../../utils/sku'
 import { amountToCents, centsToAmount } from '../../utils/money'
-import { validateRetailPrice, buildRetailSetting } from '../../utils/resellerSupplyPricing'
+import { validateRetailPrice, buildRetailSetting, getInitialRetailDraft, hasSavedRetailPrice } from '../../utils/resellerSupplyPricing'
 
 withDefaults(defineProps<{ embedded?: boolean }>(), { embedded: false })
 const { t, locale } = useI18n()
@@ -37,8 +37,7 @@ let resolveNavigation: ((choice: string) => void) | undefined
 const prefix = 'supplyPricing.'
 const text = (key: string) => t(prefix + key)
 const seed = (sku: ResellerProductSettingSKUData) => {
-  const price = sku.setting?.pricing_mode === 'fixed_price' ? sku.sale_price_amount : sku.supply_price_amount ? sku.draft_price_amount : ''
-  const listed = sku.setting?.is_listed === true
+  const { price, listed } = getInitialRetailDraft(sku)
   drafts[sku.id] = { price, listed, initialPrice: price, initialListed: listed, revision: sku.pricing_revision, saving: false, message: '', failed: false }
 }
 const priceError = (sku: ResellerProductSettingSKUData) => validateRetailPrice(draftFor(sku.id)?.price || '', sku)
@@ -56,6 +55,7 @@ const status = (product: ResellerProductSettingDetailData, sku: ResellerProductS
   if (quoteBlocked(sku)) return text(sku.error_code)
   if (priceError(sku)) return text(priceError(sku))
   if (dirty(draftFor(sku.id))) return text('unsaved')
+  if (!hasSavedRetailPrice(sku)) return text('unpriced')
   return sku.can_sell ? text('listed') : text('unlisted')
 }
 const loadRows = async (page: number) => {
@@ -150,13 +150,13 @@ onBeforeUnmount(() => { window.removeEventListener('beforeunload', beforeUnload)
     <p v-if="loading" class="p-6 text-muted-foreground">{{ text('loading') }}</p>
     <p v-else-if="!flatRows.length" class="p-6 text-muted-foreground">{{ t('personalCenter.reseller.productSettings.empty') }}</p>
     <div v-else class="overflow-hidden rounded-xl border">
-      <div class="hidden grid-cols-[minmax(180px,2fr)_minmax(100px,1fr)_minmax(160px,1.4fr)_minmax(100px,1fr)_minmax(110px,1fr)_80px] gap-4 border-b bg-muted/30 px-4 py-3 text-xs text-muted-foreground lg:grid">
+      <div class="hidden grid-cols-[minmax(0,2.5fr)_minmax(100px,1fr)_minmax(140px,1.25fr)_minmax(100px,1fr)_96px_56px] gap-4 border-b bg-muted/30 px-4 py-3 text-xs text-muted-foreground lg:grid">
         <span>{{ text('product') }}</span><span>{{ text('supply') }}</span><span>{{ text('retail') }}</span><span>{{ text('profit') }}</span><span>{{ text('listing') }}</span><span>{{ text('action') }}</span>
       </div>
-      <div v-for="{ product, sku } in flatRows" :key="sku.id" class="grid gap-4 border-b px-4 py-4 last:border-b-0 lg:grid-cols-[minmax(180px,2fr)_minmax(100px,1fr)_minmax(160px,1.4fr)_minmax(100px,1fr)_minmax(110px,1fr)_80px] lg:items-center">
+      <div v-for="{ product, sku } in flatRows" :key="sku.id" class="grid gap-4 border-b px-4 py-4 last:border-b-0 lg:grid-cols-[minmax(0,2.5fr)_minmax(100px,1fr)_minmax(140px,1.25fr)_minmax(100px,1fr)_96px_56px] lg:items-center">
         <div class="min-w-0">
-          <p class="truncate text-sm font-semibold" :title="getLocalizedText(product.product.title)">{{ getLocalizedText(product.product.title) }}</p>
-          <p class="mt-1 text-xs text-muted-foreground">{{ specLabel(product, sku) }}</p>
+          <p class="break-words text-sm font-semibold leading-5" :title="getLocalizedText(product.product.title)">{{ getLocalizedText(product.product.title) }}</p>
+          <p class="mt-1 break-words text-xs text-muted-foreground">{{ specLabel(product, sku) }}</p>
           <Button v-if="product.product_setting?.is_listed === false" variant="link" size="sm" class="h-auto p-0 text-xs" @click="restoreProduct(product)">{{ text('restoreProduct') }}</Button>
         </div>
         <div><span class="mb-1 block text-xs text-muted-foreground lg:hidden">{{ text('supply') }}</span><div class="rounded-xl border bg-muted/20 px-3 py-2 font-mono text-sm">{{ formatPrice(sku.supply_price_amount) }}</div></div>
@@ -164,11 +164,11 @@ onBeforeUnmount(() => { window.removeEventListener('beforeunload', beforeUnload)
           <label :for="`retail-${sku.id}`" class="mb-1 block text-xs text-muted-foreground lg:hidden">{{ text('retail') }}</label>
           <Input :id="`retail-${sku.id}`" v-model="draftFor(sku.id).price" inputmode="decimal" class="font-mono" :disabled="draftFor(sku.id).saving || quoteBlocked(sku)" />
           <p v-if="sku.supply_price_amount" class="mt-1 text-xs text-muted-foreground">{{ text('minimum') }} {{ formatPrice(sku.min_sale_price_amount) }}<span v-if="sku.max_sale_price_amount"> · {{ text('maximum') }} {{ formatPrice(sku.max_sale_price_amount) }}</span></p>
-          <Button v-if="sku.suggested_sale_price_amount && !quoteBlocked(sku)" variant="link" size="sm" class="h-auto p-0 text-xs" :disabled="draftFor(sku.id).saving" @click="draftFor(sku.id).price = sku.suggested_sale_price_amount!">{{ text('adopt') }} {{ formatPrice(sku.suggested_sale_price_amount) }}</Button>
+          <p v-if="!hasSavedRetailPrice(sku) && !quoteBlocked(sku)" class="mt-1 text-xs text-muted-foreground">{{ text('initialPriceHint') }}</p>
         </div>
         <div class="font-mono text-sm font-semibold" :class="priceError(sku) ? 'text-destructive' : 'text-success'"><span class="mr-2 text-xs font-normal text-muted-foreground lg:hidden">{{ text('profit') }}</span>{{ profit(sku) }}</div>
         <div><div class="flex items-center gap-2"><Switch v-model="draftFor(sku.id).listed" :disabled="draftFor(sku.id).saving || (!draftFor(sku.id).listed && (quoteBlocked(sku) || !sku.is_active))" :aria-label="text('listing')" /><span class="text-xs text-muted-foreground">{{ status(product, sku) }}</span></div></div>
-        <div><Button size="sm" :disabled="draftFor(sku.id).saving || (!dirty(draftFor(sku.id)) && (!!sku.setting || quoteBlocked(sku))) || (draftFor(sku.id).listed && !!priceError(sku))" @click="saveRow(product, sku)">{{ text(draftFor(sku.id).saving ? 'saving' : 'save') }}</Button><p v-if="draftFor(sku.id).message" class="mt-1 text-xs" :class="draftFor(sku.id).failed ? 'text-destructive' : 'text-success'" role="status">{{ draftFor(sku.id).message }}</p></div>
+        <div><Button size="sm" :disabled="draftFor(sku.id).saving || (!dirty(draftFor(sku.id)) && (hasSavedRetailPrice(sku) || quoteBlocked(sku))) || (draftFor(sku.id).listed && !!priceError(sku))" @click="saveRow(product, sku)">{{ text(draftFor(sku.id).saving ? 'saving' : 'save') }}</Button><p v-if="draftFor(sku.id).message" class="mt-1 text-xs" :class="draftFor(sku.id).failed ? 'text-destructive' : 'text-success'" role="status">{{ draftFor(sku.id).message }}</p></div>
       </div>
     </div>
     <div v-if="pagination.total_page > 1" class="mt-5 flex items-center justify-center gap-3">

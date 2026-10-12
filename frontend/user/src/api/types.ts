@@ -315,7 +315,6 @@ export interface ResellerProductSettingSKUData {
     supply_price_amount: string | null
     min_sale_price_amount: string
     max_sale_price_amount: string | null
-    suggested_sale_price_amount: string | null
     sale_price_amount: string
     draft_price_amount: string
     profit_amount: string
