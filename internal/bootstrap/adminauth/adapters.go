@@ -166,32 +166,15 @@ func (a admin2FAAuthTransportAdapter) GetAdminUsername(adminID uint) (string, er
 type admin2FAChallengeStoreAdapter struct{}
 
 func (admin2FAChallengeStoreAdapter) IsRevoked(ctx context.Context, jti string) bool {
-	rdb := cache.Client()
-	if rdb == nil {
-		return false
-	}
-	v, _ := rdb.Exists(ctx, adminchallenge.RevocationKey(jti)).Result()
-	return v == 1
+	return cache.HasChallengeFlag(ctx, adminchallenge.RevocationKey(jti))
 }
 
 func (admin2FAChallengeStoreAdapter) BumpFails(ctx context.Context, jti string) int64 {
-	rdb := cache.Client()
-	if rdb == nil {
-		return 0
-	}
-	cnt, err := rdb.Incr(ctx, adminchallenge.FailureKey(jti)).Result()
-	if err == nil && cnt == 1 {
-		_ = rdb.Expire(ctx, adminchallenge.FailureKey(jti), adminchallenge.TTL).Err()
-	}
-	return cnt
+	return cache.IncrChallengeCounter(ctx, adminchallenge.FailureKey(jti), adminchallenge.TTL)
 }
 
 func (admin2FAChallengeStoreAdapter) Revoke(ctx context.Context, jti string) {
-	rdb := cache.Client()
-	if rdb == nil {
-		return
-	}
-	_ = rdb.Set(ctx, adminchallenge.RevocationKey(jti), "1", adminchallenge.TTL).Err()
+	cache.SetChallengeFlag(ctx, adminchallenge.RevocationKey(jti), adminchallenge.TTL)
 }
 
 type adminLoginRecorderAdapter struct {

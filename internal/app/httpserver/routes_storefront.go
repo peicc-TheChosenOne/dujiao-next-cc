@@ -66,6 +66,10 @@ func registerStorefrontRoutes(
 	guestReadRule middleware.RateLimitRule,
 	guestWriteRule middleware.RateLimitRule,
 	giftCardRedeemRule middleware.RateLimitRule,
+	loginAccountRule middleware.RateLimitRule,
+	verifyCodeRule middleware.RateLimitRule,
+	registerRule middleware.RateLimitRule,
+	passwordResetRule middleware.RateLimitRule,
 ) {
 	storefront := apiV1.Group("")
 	storefront.Use(middleware.ResellerTenantMiddleware(c.ResellerDomainResolver))
@@ -103,14 +107,17 @@ func registerStorefrontRoutes(
 	// 用户认证接口
 	auth := storefront.Group("/auth")
 	{
-		userauthtransport.RegisterUserVerifyAuthRoutes(auth, userVerifyHandler)
-		userauthtransport.RegisterUserRegisterAuthRoutes(auth, userLoginHandler)
-		userauthtransport.RegisterUserLoginAuthRoutes(auth, userLoginHandler, middleware.RateLimitMiddleware(redisClient, loginRule, middleware.KeyByIPAndJSONField("email")))
+		userauthtransport.RegisterUserVerifyAuthRoutes(auth, userVerifyHandler, middleware.RateLimitMiddleware(redisClient, verifyCodeRule, middleware.KeyByIP))
+		userauthtransport.RegisterUserRegisterAuthRoutes(auth, userLoginHandler, middleware.RateLimitMiddleware(redisClient, registerRule, middleware.KeyByIP))
+		userauthtransport.RegisterUserLoginAuthRoutes(auth, userLoginHandler,
+			middleware.RateLimitMiddleware(redisClient, loginRule, middleware.KeyByIPAndJSONField("email")),
+			middleware.RateLimitMiddleware(redisClient, loginAccountRule, middleware.KeyByJSONField("email")),
+		)
 		userauthtransport.RegisterUser2FAAuthRoutes(auth, user2FAHandler, middleware.RateLimitMiddleware(redisClient, loginRule, middleware.KeyByIP))
 		userauthtransport.RegisterUserTelegramAuthRoutes(auth, userTelegramHandler, middleware.RateLimitMiddleware(redisClient, loginRule, middleware.KeyByIP))
 		userauthtransport.RegisterUserTelegramOIDCAuthRoutes(auth, userTelegramOIDCHandler, middleware.RateLimitMiddleware(redisClient, loginRule, middleware.KeyByIP))
 		userauthtransport.RegisterUserGoogleAuthRoutes(auth, userGoogleHandler, middleware.RateLimitMiddleware(redisClient, loginRule, middleware.KeyByIP))
-		userauthtransport.RegisterUserPasswordAuthRoutes(auth, userPasswordHandler)
+		userauthtransport.RegisterUserPasswordAuthRoutes(auth, userPasswordHandler, middleware.RateLimitMiddleware(redisClient, passwordResetRule, middleware.KeyByIP))
 	}
 
 	// 用户接口（需鉴权）

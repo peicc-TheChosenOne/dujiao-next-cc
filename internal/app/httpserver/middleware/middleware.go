@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"net/http"
+	"path"
 	"strconv"
 	"strings"
 	"time"
@@ -52,14 +53,15 @@ func CORSMiddleware(cfg config.CORSConfig) gin.HandlerFunc {
 
 	return func(c *gin.Context) {
 		origin := c.GetHeader("Origin")
-		allowedOrigin := resolveAllowedOrigin(origin, allowedOrigins, cfg.AllowCredentials)
+		allowedOrigin := resolveAllowedOrigin(origin, allowedOrigins)
 		if allowedOrigin != "" {
 			c.Writer.Header().Set("Access-Control-Allow-Origin", allowedOrigin)
 			if allowedOrigin != "*" {
 				c.Writer.Header().Add("Vary", "Origin")
 			}
 		}
-		if cfg.AllowCredentials {
+		// 只对显式列出的来源允许携带凭证；通配符若也放行凭证，任意站点都能带着用户 Cookie 读取响应
+		if cfg.AllowCredentials && allowedOrigin != "" && allowedOrigin != "*" {
 			c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
 		}
 		c.Writer.Header().Set("Access-Control-Allow-Headers", headersHeader)
@@ -77,27 +79,64 @@ func CORSMiddleware(cfg config.CORSConfig) gin.HandlerFunc {
 	}
 }
 
-func resolveAllowedOrigin(origin string, allowedOrigins []string, allowCredentials bool) string {
-	if len(allowedOrigins) == 0 {
-		return ""
+// resolveAllowedOrigin 显式列出的来源原样回显（可携带凭证）；通配符只返回 "*"，不再回显请求来源。
+func resolveAllowedOrigin(origin string, allowedOrigins []string) string {
+	if origin != "" {
+		for _, allowed := range allowedOrigins {
+			if allowed != "*" && strings.EqualFold(allowed, origin) {
+				return origin
+			}
+		}
 	}
 	for _, allowed := range allowedOrigins {
 		if allowed == "*" {
-			if allowCredentials && origin != "" {
-				return origin
-			}
 			return "*"
 		}
 	}
-	if origin == "" {
-		return ""
-	}
-	for _, allowed := range allowedOrigins {
-		if strings.EqualFold(allowed, origin) {
-			return origin
-		}
-	}
 	return ""
+}
+
+// BodySizeLimitMiddleware 为所有请求体设置上限，防止超大请求体耗尽内存；multipart 上传单独放宽。
+// 各接口仍可在 handler 内叠加更严格的上限（如支付回调、分销商图片）。
+func BodySizeLimitMiddleware(defaultLimit, multipartLimit int64) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if c.Request.Body == nil || c.Request.Body == http.NoBody {
+			c.Next()
+			return
+		}
+		limit := defaultLimit
+		if strings.HasPrefix(strings.ToLower(c.ContentType()), "multipart/") {
+			limit = multipartLimit
+		}
+		if limit <= 0 {
+			c.Next()
+			return
+		}
+		if c.Request.ContentLength > limit {
+			msg := i18n.T(i18n.ResolveLocale(c), "error.request_too_large")
+			response.ErrorWithHTTPStatus(c, http.StatusRequestEntityTooLarge, response.CodeBadRequest, msg)
+			return
+		}
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, limit)
+		c.Next()
+	}
+}
+
+// inlineUploadExtensions 允许在站点源下内联展示的上传文件类型（位图）。
+var inlineUploadExtensions = map[string]bool{".jpg": true, ".jpeg": true, ".png": true, ".gif": true, ".webp": true}
+
+// UploadsSecurityHeadersMiddleware 为 /uploads 静态文件加安全响应头：一律禁止 MIME 嗅探；位图以外的文件
+// 作为附件下载并放进 CSP 沙箱。即使上传校验被绕过，HTML / SVG 等文件也无法在站点源下执行脚本、
+// 读取 localStorage 里的登录态。<img>、<video> 等标签引用不受 Content-Disposition 影响。
+func UploadsSecurityHeadersMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Header("X-Content-Type-Options", "nosniff")
+		if !inlineUploadExtensions[strings.ToLower(path.Ext(c.Request.URL.Path))] {
+			c.Header("Content-Disposition", "attachment")
+			c.Header("Content-Security-Policy", "sandbox; script-src 'none'")
+		}
+		c.Next()
+	}
 }
 
 // RequestIDMiddleware 请求 ID 中间件

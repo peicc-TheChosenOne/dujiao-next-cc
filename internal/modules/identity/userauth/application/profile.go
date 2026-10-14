@@ -29,7 +29,8 @@ func (s *Service) ResetPassword(email, code, newPassword string) error {
 		return err
 	}
 	if user == nil {
-		return ErrNotFound
+		// 与验证码错误返回一致，避免借重置接口枚举已注册邮箱
+		return ErrVerifyCodeInvalid
 	}
 
 	if _, err := s.verifyCode(normalized, constants.VerifyPurposeReset, code); err != nil {

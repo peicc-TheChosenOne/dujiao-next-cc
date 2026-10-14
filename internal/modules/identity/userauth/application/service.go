@@ -3,12 +3,14 @@ package application
 import (
 	"context"
 	"crypto/rand"
+	"crypto/subtle"
 	"errors"
 	"fmt"
 	"github.com/dujiao-next/internal/telegramidentity"
 	"math/big"
 	"net/mail"
 	"strings"
+	"sync"
 	"time"
 
 	usercontract "github.com/dujiao-next/internal/modules/identity/user/contract"
@@ -22,6 +24,7 @@ import (
 	"github.com/dujiao-next/internal/cache"
 	"github.com/dujiao-next/internal/config"
 	"github.com/dujiao-next/internal/constants"
+	"github.com/dujiao-next/internal/logger"
 	emailverificationcontract "github.com/dujiao-next/internal/modules/identity/emailverification/contract"
 	emailverificationdomain "github.com/dujiao-next/internal/modules/identity/emailverification/domain"
 	externalidentitycontract "github.com/dujiao-next/internal/modules/identity/externalidentity/contract"
@@ -192,6 +195,13 @@ func (s *Service) ParseUserJWT(tokenString string) (*UserJWTClaims, error) {
 	return nil, errors.New("无效的 token")
 }
 
+// dummyPasswordHash 在账号不存在时陪跑一次 bcrypt，使响应耗时与密码错误一致，避免按耗时枚举账号。
+// 必须是合法哈希：长度不足的字符串会被 bcrypt 立即拒绝，起不到抹平耗时的作用。
+var dummyPasswordHash = sync.OnceValue(func() []byte {
+	hash, _ := bcrypt.GenerateFromPassword([]byte("dujiao-next-timing-guard"), bcrypt.DefaultCost)
+	return hash
+})
+
 // SendVerifyCode 发送邮箱验证码
 func (s *Service) SendVerifyCode(ctx context.Context, email, purpose, locale string) error {
 	if s.emailService == nil {
@@ -225,7 +235,8 @@ func (s *Service) SendVerifyCode(ctx context.Context, email, purpose, locale str
 			return err
 		}
 		if user == nil {
-			return ErrNotFound
+			// 与「已发送」返回一致，避免借找回密码接口枚举已注册邮箱
+			return nil
 		}
 		if strings.TrimSpace(user.Locale) != "" {
 			locale = user.Locale
@@ -245,7 +256,15 @@ func (s *Service) SendVerifyCode(ctx context.Context, email, purpose, locale str
 		}
 	}
 
-	return s.sendVerifyCode(ctx, normalized, purpose, locale)
+	err = s.sendVerifyCode(ctx, normalized, purpose, locale)
+	if purpose == constants.VerifyPurposeReset {
+		// 冷却和发送失败也使用统一公开响应，避免二次请求区分邮箱是否注册。
+		if err != nil && !errors.Is(err, ErrVerifyCodeTooFrequent) {
+			logger.Warnw("password_reset_code_send_failed", "error", err)
+		}
+		return nil
+	}
+	return err
 }
 
 func (s *Service) checkRegistrationEmailDomain(email string) error {
@@ -340,7 +359,11 @@ func (s *Service) LoginStep1(email, password string, rememberMe bool) (*UserLogi
 		return nil, err
 	}
 	if user == nil {
-		_ = bcrypt.CompareHashAndPassword([]byte("$2a$10$dummyhashtopreventtimingattacksxxxxxxxxxxxxxxxxxx"), []byte(password))
+		_ = bcrypt.CompareHashAndPassword(dummyPasswordHash(), []byte(password))
+		return nil, ErrInvalidCredentials
+	}
+	// 先校验密码再暴露账号状态，否则不知道密码也能探出账号是否存在、是否被禁用
+	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err != nil {
 		return nil, ErrInvalidCredentials
 	}
 	if strings.ToLower(user.Status) != constants.UserStatusActive {
@@ -348,9 +371,6 @@ func (s *Service) LoginStep1(email, password string, rememberMe bool) (*UserLogi
 	}
 	if user.EmailVerifiedAt == nil {
 		return nil, ErrEmailNotVerified
-	}
-	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err != nil {
-		return nil, ErrInvalidCredentials
 	}
 
 	if user.TOTPEnabledAt != nil {
@@ -495,18 +515,26 @@ func (s *Service) verifyCode(email, purpose, code string) (*emailverificationdom
 		return nil, ErrVerifyCodeExpired
 	}
 
-	maxAttempts := resolveMaxAttempts(s.cfg.Email.VerifyCode)
-	if maxAttempts > 0 && record.AttemptCount >= maxAttempts {
+	// 先原子占用一次尝试再比对，并发请求无法共用同一个旧计数绕过次数上限
+	reserved, err := s.codeRepo.ReserveAttempt(record.ID, resolveMaxAttempts(s.cfg.Email.VerifyCode))
+	if err != nil {
+		return nil, err
+	}
+	if !reserved {
 		return nil, ErrVerifyCodeAttemptsExceeded
 	}
 
-	if strings.TrimSpace(record.Code) != strings.TrimSpace(code) {
-		_ = s.codeRepo.IncrementAttempt(record.ID)
+	if subtle.ConstantTimeCompare([]byte(strings.TrimSpace(record.Code)), []byte(strings.TrimSpace(code))) != 1 {
 		return nil, ErrVerifyCodeInvalid
 	}
 
-	if err := s.codeRepo.MarkVerified(record.ID, now); err != nil {
+	verified, err := s.codeRepo.MarkVerified(record.ID, now)
+	if err != nil {
 		return nil, err
+	}
+	if !verified {
+		// 同一验证码已被并发请求用掉
+		return nil, ErrVerifyCodeInvalid
 	}
 	return record, nil
 }

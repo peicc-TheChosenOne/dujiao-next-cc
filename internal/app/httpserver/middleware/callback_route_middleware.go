@@ -28,11 +28,15 @@ var defaultCallbackPaths = map[string]bool{
 //   - 匹配自定义路径 → 分发到对应 handler
 //   - 匹配默认回调路径 → 返回 404（隐藏默认路径）
 //   - 未配置自定义路由 → 放行，默认路由正常工作
+//
+// allowCallback 为回调限流判定（见 RateLimitCheck）：自定义路径在这里直接分发、不会进入
+// 默认回调路由组，必须在分发前套用同一条回调限流规则。
 func CallbackRouteMiddleware(
 	settingService *settingsapp.Service,
 	callbackHandler *paymentcallbacktransport.Handler,
 	webhookHandler *paymenttransport.WebhookHandler,
 	upstreamHandler *upstreamtransport.Handler,
+	allowCallback func(*gin.Context) bool,
 ) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		path := strings.TrimRight(c.Request.URL.Path, "/")
@@ -58,37 +62,36 @@ func CallbackRouteMiddleware(
 		}
 
 		// 匹配自定义回调路径
+		var dispatch gin.HandlerFunc
 		switch path {
 		case routes.PaymentCallback:
 			if routes.PaymentCallback != "" && (method == http.MethodPost || method == http.MethodGet) {
-				callbackHandler.PaymentCallback(c)
-				c.Abort()
-				return
+				dispatch = callbackHandler.PaymentCallback
 			}
 		case routes.DujiaoPayWebhook:
 			if routes.DujiaoPayWebhook != "" && method == http.MethodPost && webhookHandler != nil {
-				webhookHandler.DujiaoPayWebhook(c)
-				c.Abort()
-				return
+				dispatch = webhookHandler.DujiaoPayWebhook
 			}
 		case routes.PaypalWebhook:
 			if routes.PaypalWebhook != "" && method == http.MethodPost && webhookHandler != nil {
-				webhookHandler.PaypalWebhook(c)
-				c.Abort()
-				return
+				dispatch = webhookHandler.PaypalWebhook
 			}
 		case routes.StripeWebhook:
 			if routes.StripeWebhook != "" && method == http.MethodPost && webhookHandler != nil {
-				webhookHandler.StripeWebhook(c)
-				c.Abort()
-				return
+				dispatch = webhookHandler.StripeWebhook
 			}
 		case routes.UpstreamCallback:
 			if routes.UpstreamCallback != "" && method == http.MethodPost {
-				upstreamHandler.HandleCallback(c)
-				c.Abort()
+				dispatch = upstreamHandler.HandleCallback
+			}
+		}
+		if dispatch != nil {
+			if allowCallback != nil && !allowCallback(c) {
 				return
 			}
+			dispatch(c)
+			c.Abort()
+			return
 		}
 
 		// 屏蔽默认回调路径（当对应的自定义路由已配置时）

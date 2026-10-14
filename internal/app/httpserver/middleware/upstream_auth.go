@@ -7,6 +7,7 @@ import (
 
 	apicredentialdomain "github.com/dujiao-next/internal/modules/apicredential/domain"
 
+	"github.com/dujiao-next/internal/cache"
 	"github.com/dujiao-next/internal/constants"
 	"github.com/dujiao-next/internal/logger"
 	"github.com/dujiao-next/internal/upstream"
@@ -83,6 +84,10 @@ func UpstreamAPIAuthMiddleware(credRepo UpstreamCredentialStore) gin.HandlerFunc
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"ok": false, "error_code": "invalid_signature", "error_message": "signature verification failed"})
 			return
 		}
+		if !claimSignedRequest(c, "upstream", cred.ApiKey, signature) {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"ok": false, "error_code": "request_replayed", "error_message": "request signature has already been used"})
+			return
+		}
 
 		// 更新最后使用时间（异步、只写单列、60s 节流）
 		now := time.Now()
@@ -102,6 +107,19 @@ func UpstreamAPIAuthMiddleware(credRepo UpstreamCredentialStore) gin.HandlerFunc
 
 		c.Next()
 	}
+}
+
+// signedRequestReplayTTL 覆盖签名时间戳允许的偏差范围（前后各 MaxTimestampSkew 秒）。
+const signedRequestReplayTTL = 2*upstream.MaxTimestampSkew*time.Second + time.Second
+
+// claimSignedRequest 对会改变状态的签名请求做一次性占用：同一签名在有效期内只能使用一次，
+// 截获的写请求无法被重放。GET/HEAD 不占用：签名不含 query，同一秒内合法的并发查询会共用签名。
+func claimSignedRequest(c *gin.Context, scope, key, signature string) bool {
+	switch c.Request.Method {
+	case http.MethodGet, http.MethodHead, http.MethodOptions:
+		return true
+	}
+	return cache.ClaimOnce(c.Request.Context(), "replay:"+scope+":"+key+":"+signature, signedRequestReplayTTL)
 }
 
 // bodyReader 实现 io.Reader，用于重置 body

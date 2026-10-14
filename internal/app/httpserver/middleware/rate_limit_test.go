@@ -76,18 +76,18 @@ func TestLocalRateLimiterCapacityDoesNotEvictLiveEntries(t *testing.T) {
 	}
 
 	rule := RateLimitRule{WindowSeconds: 60, MaxRequests: 5}
-	count, _, warned := limiter.increment("new-key", rule, now)
+	count, _, warned := limiter.increment("new-key", "", rule, now)
 	if count <= int64(rule.MaxRequests) {
 		t.Fatalf("new key must fail closed when local limiter is at capacity, count=%d", count)
 	}
 	if !warned {
 		t.Fatal("first capacity rejection must request an operator warning")
 	}
-	_, _, warned = limiter.increment("another-new-key", rule, now.Add(time.Second))
+	_, _, warned = limiter.increment("another-new-key", "", rule, now.Add(time.Second))
 	if warned {
 		t.Fatal("capacity warning must be throttled")
 	}
-	_, _, warned = limiter.increment("later-new-key", rule, now.Add(localRateLimitWarningInterval))
+	_, _, warned = limiter.increment("later-new-key", "", rule, now.Add(localRateLimitWarningInterval))
 	if !warned {
 		t.Fatal("capacity warning should be emitted again after the throttle interval")
 	}
@@ -116,7 +116,7 @@ func TestLocalRateLimiterPurgesExpiredEntriesBeforeRejectingNewKey(t *testing.T)
 		}
 	}
 
-	count, _, warned := limiter.increment("new-key", RateLimitRule{WindowSeconds: 60, MaxRequests: 5}, now)
+	count, _, warned := limiter.increment("new-key", "", RateLimitRule{WindowSeconds: 60, MaxRequests: 5}, now)
 	if count != 1 {
 		t.Fatalf("new key count = %d, want 1 after expired entry cleanup", count)
 	}
@@ -196,5 +196,87 @@ func TestToInt64(t *testing.T) {
 				t.Fatalf("value want %d got %d", tc.want, got)
 			}
 		})
+	}
+}
+
+func TestKeyByJSONFieldIgnoresClientIP(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	keys := make([]string, 0, 2)
+	for _, remote := range []string{"1.2.3.4:5678", "5.6.7.8:5678"} {
+		c, _ := gin.CreateTestContext(httptest.NewRecorder())
+		c.Request = httptest.NewRequest(http.MethodPost, "/login", strings.NewReader(`{"username":" Admin "}`))
+		c.Request.Header.Set("Content-Type", "application/json")
+		c.Request.RemoteAddr = remote
+		keys = append(keys, KeyByJSONField("username")(c))
+	}
+	if keys[0] != "field|admin" || keys[0] != keys[1] {
+		t.Fatalf("account key must be identical across IPs, got %v", keys)
+	}
+}
+
+func TestReadJSONFieldRejectsOversizedBody(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	payload := `{"email":"a@example.com","pad":"` + strings.Repeat("x", maxRateLimitJSONBodyBytes) + `"}`
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/login", strings.NewReader(payload))
+	c.Request.RemoteAddr = "1.2.3.4:5678"
+
+	_ = KeyByIPAndJSONField("email")(c)
+	if !c.IsAborted() || c.Writer.Status() != http.StatusRequestEntityTooLarge {
+		t.Fatalf("oversized authentication body must be rejected, got %d", c.Writer.Status())
+	}
+}
+
+func TestLocalRateLimiterCapsLiveKeysPerOwner(t *testing.T) {
+	now := time.Now()
+	limiter := &localRateLimiter{}
+	rule := RateLimitRule{WindowSeconds: 300, MaxRequests: 5}
+
+	for i := 0; i < localRateLimitMaxKeysPerOwner; i++ {
+		if count, _, _ := limiter.increment(fmt.Sprintf("victim-%d@example.com|9.9.9.9", i), "9.9.9.9", rule, now); count != 1 {
+			t.Fatalf("key %d count = %d, want 1", i, count)
+		}
+	}
+	if count, _, _ := limiter.increment("one-more@example.com|9.9.9.9", "9.9.9.9", rule, now); count <= int64(rule.MaxRequests) {
+		t.Fatalf("owner above its key quota must be limited, count=%d", count)
+	}
+	if count, _, _ := limiter.increment("victim-0@example.com|9.9.9.9", "9.9.9.9", rule, now); count != 2 {
+		t.Fatalf("existing key of a capped owner must keep counting, count=%d", count)
+	}
+	if count, _, _ := limiter.increment("user@example.com|1.1.1.1", "1.1.1.1", rule, now); count != 1 {
+		t.Fatalf("other owners must still get new keys, count=%d", count)
+	}
+	if count, _, _ := limiter.increment("later@example.com|9.9.9.9", "9.9.9.9", rule, now.Add(10*time.Minute)); count != 1 {
+		t.Fatalf("owner quota must be released after its keys expire, count=%d", count)
+	}
+}
+
+func TestRateLimitCheckLimitsWithoutAdvancingHandlerChain(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	allow := RateLimitCheck(nil, RateLimitRule{WindowSeconds: 60, MaxRequests: 1}, KeyByIP)
+	routeHandlerCalls := 0
+	r := gin.New()
+	r.Use(func(c *gin.Context) {
+		// 模拟自定义回调路径：先限流，再由中间件自己分发并终止链路
+		if !allow(c) {
+			return
+		}
+		c.String(http.StatusOK, "dispatched")
+		c.Abort()
+	})
+	r.POST("/callback", func(c *gin.Context) { routeHandlerCalls++ })
+
+	first := httptest.NewRecorder()
+	r.ServeHTTP(first, httptest.NewRequest(http.MethodPost, "/callback", nil))
+	if first.Code != http.StatusOK || first.Body.String() != "dispatched" {
+		t.Fatalf("first request = %d %q, want dispatched", first.Code, first.Body.String())
+	}
+	second := httptest.NewRecorder()
+	r.ServeHTTP(second, httptest.NewRequest(http.MethodPost, "/callback", nil))
+	if second.Code != http.StatusTooManyRequests {
+		t.Fatalf("second request = %d, want 429", second.Code)
+	}
+	if routeHandlerCalls != 0 {
+		t.Fatalf("RateLimitCheck must not run the remaining handler chain, route handler ran %d times", routeHandlerCalls)
 	}
 }

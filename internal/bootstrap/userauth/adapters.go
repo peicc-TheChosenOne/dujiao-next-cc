@@ -576,36 +576,19 @@ func (a user2FAAuthTransportAdapter) GetUserEmail(userID uint) (string, error) {
 	return user.Email, nil
 }
 
-// user2FAChallengeStoreAdapter 将 Redis 挑战状态适配为 transport 端口。
+// user2FAChallengeStoreAdapter 将挑战状态（Redis 优先，无 Redis 时进程内存）适配为 transport 端口。
 type user2FAChallengeStoreAdapter struct{}
 
 func (user2FAChallengeStoreAdapter) IsRevoked(ctx context.Context, jti string) bool {
-	rdb := cache.Client()
-	if rdb == nil {
-		return false
-	}
-	v, _ := rdb.Exists(ctx, challenge.RevocationKey(jti)).Result()
-	return v == 1
+	return cache.HasChallengeFlag(ctx, challenge.RevocationKey(jti))
 }
 
 func (user2FAChallengeStoreAdapter) BumpFails(ctx context.Context, jti string) int64 {
-	rdb := cache.Client()
-	if rdb == nil {
-		return 0
-	}
-	cnt, err := rdb.Incr(ctx, challenge.FailureKey(jti)).Result()
-	if err == nil && cnt == 1 {
-		_ = rdb.Expire(ctx, challenge.FailureKey(jti), challenge.TTL).Err()
-	}
-	return cnt
+	return cache.IncrChallengeCounter(ctx, challenge.FailureKey(jti), challenge.TTL)
 }
 
 func (user2FAChallengeStoreAdapter) Revoke(ctx context.Context, jti string) {
-	rdb := cache.Client()
-	if rdb == nil {
-		return
-	}
-	_ = rdb.Set(ctx, challenge.RevocationKey(jti), "1", challenge.TTL).Err()
+	cache.SetChallengeFlag(ctx, challenge.RevocationKey(jti), challenge.TTL)
 }
 
 func mapUserAuthTransportError(err error) error {

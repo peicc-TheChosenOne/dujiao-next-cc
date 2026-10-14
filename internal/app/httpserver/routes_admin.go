@@ -82,11 +82,15 @@ func registerAdminRoutes(
 	adminPaymentChannelHandler *paymenttransport.AdminChannelHandler,
 	redisClient *redis.Client,
 	adminLoginRule middleware.RateLimitRule,
+	adminLoginAccountRule middleware.RateLimitRule,
 ) {
 	admin := apiV1.Group("/admin")
 
 	// 登录接口（无需鉴权）
-	adminauthtransport.RegisterAdminLoginAuthRoutes(admin, adminLoginHandler, middleware.RateLimitMiddleware(redisClient, adminLoginRule, middleware.KeyByIP))
+	adminauthtransport.RegisterAdminLoginAuthRoutes(admin, adminLoginHandler,
+		middleware.RateLimitMiddleware(redisClient, adminLoginRule, middleware.KeyByIP),
+		middleware.RateLimitMiddleware(redisClient, adminLoginAccountRule, middleware.KeyByJSONField("username")),
+	)
 	adminauthtransport.RegisterAdmin2FAAuthRoutes(admin, admin2FAHandler, middleware.RateLimitMiddleware(redisClient, adminLoginRule, middleware.KeyByIP))
 
 	// 需要鉴权的接口
