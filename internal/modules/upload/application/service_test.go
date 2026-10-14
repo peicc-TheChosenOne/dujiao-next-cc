@@ -2,6 +2,9 @@ package application
 
 import (
 	"bytes"
+	"errors"
+	"image"
+	"image/png"
 	"io"
 	"mime/multipart"
 	"path/filepath"
@@ -231,4 +234,74 @@ func createMultipartFile(t *testing.T, filename string, content []byte) *multipa
 		t.Fatalf("expected one file, got %d", len(files))
 	}
 	return files[0]
+}
+
+func testPNGBytes(t *testing.T) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, image.NewRGBA(image.Rect(0, 0, 1, 1))); err != nil {
+		t.Fatalf("encode png: %v", err)
+	}
+	return buf.Bytes()
+}
+
+func newPNGOnlyUploadService(store contract.Store) *Service {
+	return NewService(Policy{
+		MaxSize:           1 << 20,
+		AllowedTypes:      []string{"image/png"},
+		AllowedExtensions: []string{".png"},
+	}, store)
+}
+
+func TestTelegramSceneRejectsExecutableContent(t *testing.T) {
+	cases := []struct {
+		name     string
+		filename string
+		content  []byte
+	}{
+		{name: "html page", filename: "x.html", content: []byte("<html><script>alert(1)</script></html>")},
+		{name: "svg image", filename: "x.svg", content: []byte(`<svg xmlns="http://www.w3.org/2000/svg"></svg>`)},
+		{name: "html disguised as pdf", filename: "x.pdf", content: []byte("<!DOCTYPE html><script>alert(1)</script>")},
+		{name: "no extension", filename: "payload", content: []byte("plain")},
+	}
+	for _, tc := range cases {
+		store := &memoryStore{}
+		_, err := newPNGOnlyUploadService(store).SaveFileWithMeta(createMultipartFile(t, tc.filename, tc.content), "telegram")
+		var validation *contract.ValidationError
+		if !errors.As(err, &validation) {
+			t.Errorf("%s: error = %v, want a validation error", tc.name, err)
+		}
+		if store.data != nil {
+			t.Errorf("%s: rejected upload was stored", tc.name)
+		}
+	}
+}
+
+func TestTelegramSceneAcceptsDocumentsAndImages(t *testing.T) {
+	for _, tc := range []struct {
+		filename string
+		content  []byte
+	}{
+		{filename: "manual.pdf", content: []byte("%PDF-1.4\n1 0 obj\n")},
+		{filename: "cover.png", content: testPNGBytes(t)},
+	} {
+		store := &memoryStore{}
+		result, err := newPNGOnlyUploadService(store).SaveFileWithMeta(createMultipartFile(t, tc.filename, tc.content), "telegram")
+		if err != nil {
+			t.Fatalf("%s: unexpected error %v", tc.filename, err)
+		}
+		if filepath.Ext(result.URL) != filepath.Ext(tc.filename) || !bytes.Equal(store.data, tc.content) {
+			t.Fatalf("%s: upload was not stored as-is (url=%s)", tc.filename, result.URL)
+		}
+	}
+}
+
+func TestRegularSceneStillUsesConfiguredPolicy(t *testing.T) {
+	service := newPNGOnlyUploadService(&memoryStore{})
+	if _, err := service.SaveFileWithMeta(createMultipartFile(t, "photo.png", testPNGBytes(t)), "product"); err != nil {
+		t.Fatalf("allowed png rejected: %v", err)
+	}
+	if _, err := service.SaveFileWithMeta(createMultipartFile(t, "manual.pdf", []byte("%PDF-1.4\n")), "product"); err == nil {
+		t.Fatal("product scene must keep rejecting extensions outside the configured policy")
+	}
 }

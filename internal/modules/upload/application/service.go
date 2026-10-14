@@ -33,6 +33,15 @@ var allowedUploadScenes = map[string]struct{}{
 	"reseller": {},
 }
 
+// telegramAttachmentExtensions telegram 场景（Bot 封面与群发附件，以 sendDocument 原样发出）允许的扩展名：
+// 位图、常见文档、压缩包与音视频。网页、脚本、SVG 等能在浏览器里执行的类型不在其中。
+var telegramAttachmentExtensions = map[string]struct{}{
+	".jpg": {}, ".jpeg": {}, ".png": {}, ".gif": {}, ".webp": {},
+	".pdf": {}, ".txt": {}, ".csv": {}, ".doc": {}, ".docx": {}, ".xls": {}, ".xlsx": {}, ".ppt": {}, ".pptx": {},
+	".zip": {}, ".rar": {}, ".7z": {},
+	".mp3": {}, ".m4a": {}, ".ogg": {}, ".mp4": {}, ".mov": {}, ".webm": {},
+}
+
 // Service 文件上传服务。
 type Service struct {
 	policy Policy
@@ -71,7 +80,11 @@ func (s *Service) SaveFileWithMeta(file *multipart.FileHeader, scene string) (*c
 
 	// 获取文件扩展名
 	ext := strings.ToLower(filepath.Ext(file.Filename))
-	if normalizedScene != "telegram" && len(s.policy.AllowedExtensions) > 0 {
+	if normalizedScene == "telegram" {
+		if _, ok := telegramAttachmentExtensions[ext]; !ok {
+			return nil, newUploadValidationError("文件扩展名不被允许: %s", ext)
+		}
+	} else if len(s.policy.AllowedExtensions) > 0 {
 		if ext == "" || !isAllowedExtension(ext, s.policy.AllowedExtensions) {
 			return nil, newUploadValidationError("文件扩展名不被允许: %s", ext)
 		}
@@ -99,7 +112,12 @@ func (s *Service) SaveFileWithMeta(file *multipart.FileHeader, scene string) (*c
 	if ext == ".svg" && isSVGContent(buffer) {
 		contentType = "image/svg+xml"
 	}
-	if normalizedScene != "telegram" && len(s.policy.AllowedTypes) > 0 {
+	if normalizedScene == "telegram" {
+		// 附件可以是任意文档，但内容被识别为网页 / XML 的一律拒绝，防止借扩展名夹带可执行页面
+		if strings.HasPrefix(contentType, "text/html") || strings.HasPrefix(contentType, "text/xml") {
+			return nil, newUploadValidationError("文件类型不被允许: %s", contentType)
+		}
+	} else if len(s.policy.AllowedTypes) > 0 {
 		allowed := false
 		for _, t := range s.policy.AllowedTypes {
 			if strings.EqualFold(contentType, t) {

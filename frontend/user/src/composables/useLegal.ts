@@ -2,6 +2,7 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '../stores/app'
 import { usePageSeo } from './usePageSeo'
+import { processHtmlForDisplay } from '../utils/content'
 
 /**
  * 条款/隐私页共享逻辑（classic + vault 双模板共用）。
@@ -31,10 +32,11 @@ export function useLegal(type: () => 'terms' | 'privacy') {
     const legal = config.legal
     const lang = locale.value
 
+    // 结果直接用于 v-html，必须经过净化
     if (type() === 'terms' && legal.terms) {
-      return legal.terms[lang] || ''
+      return processHtmlForDisplay(legal.terms[lang] || '')
     } else if (type() === 'privacy' && legal.privacy) {
-      return legal.privacy[lang] || ''
+      return processHtmlForDisplay(legal.privacy[lang] || '')
     }
     return ''
   })
