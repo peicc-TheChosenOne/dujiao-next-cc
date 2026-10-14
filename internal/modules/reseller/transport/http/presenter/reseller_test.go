@@ -1,6 +1,8 @@
 package presenter
 
 import (
+	"encoding/json"
+	"strings"
 	"testing"
 
 	resellerdomain "github.com/dujiao-next/internal/modules/reseller/domain"
@@ -9,6 +11,18 @@ import (
 	"github.com/dujiao-next/internal/shared/money"
 	"github.com/shopspring/decimal"
 )
+
+func TestDomainResponseIncludesDNSInstructionsWithoutLeaseOrProviderID(t *testing.T) {
+	row := resellerdomain.Domain{Domain: "customer.example.test", RootDomain: "customer.example.test", SyncToken: "private-worker-lease", ExternalHostnameID: "private-provider-id", DNSRecordsJSON: jsonmap.JSON{"records": []map[string]string{{"type": "CNAME", "name": "customer.example.test", "value": "entry.example.test"}}}}
+	resp := NewResellerDomainResp(&row)
+	if len(resp.DNSRecords) != 1 || resp.DNSRecords[0].Value != "entry.example.test" {
+		t.Fatal("DNS instructions were not decoded")
+	}
+	encoded, err := json.Marshal(resp)
+	if err != nil || strings.Contains(string(encoded), "private-worker-lease") || strings.Contains(string(encoded), "private-provider-id") {
+		t.Fatal("internal synchronization fields exposed")
+	}
+}
 
 func TestResellerLedgerRespOmitsSensitiveSnapshotFields(t *testing.T) {
 	orderID := uint(10)

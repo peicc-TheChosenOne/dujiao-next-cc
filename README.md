@@ -292,6 +292,32 @@ go build -tags release,fullstack -o dujiao-next ./cmd/server
 Note that admin uses `build:fullstack`, not `build`. Plain `build` produces a bundle pinned to
 `/`, which silently breaks a custom `web.admin_path`.
 
+For automatic reseller domains, enable Cloudflare for SaaS on the platform zone and
+configure `reseller.domain_binding` using the example files. Keep the API token in
+`config.private.yml`, restricted to the platform zone's SSL and Certificates permission.
+The queue synchronizes hostnames every minute. Submitting a root domain reserves the
+root and `www` together; both hostname and certificate states must be active before
+administrator approval opens the store. Defaults limit each reseller to five root/www
+pairs and the platform to 100 hostnames; pending validation expires after seven days.
+The provider quota is checked before remote creation. Increasing the configured
+limit may incur additional Cloudflare charges. Temporary provider outages preserve approved
+stores. Disabling a binding immediately closes the store and schedules remote cleanup.
+
+Customers point both CNAME records to the configured entry hostname. Apex records need
+DNS-provider CNAME flattening or ALIAS support. Cloudflare-proxied customer records use
+Cloudflare for SaaS O2O; do not promise a fixed DNS/certificate completion time.
+
+Set the SaaS fallback origin to a proxied hostname that points at the server, and point
+the entry CNAME to it. Custom hostnames reach the origin with their own SNI, which a
+platform certificate cannot match, so use the SaaS zone's Full (not strict) mode and
+accept only Cloudflare connections at the origin: `deploy/nginx-cloudflare-saas.conf.example`
+is a catch-all server that allows Cloudflare's published networks only, restores the
+visitor IP from `CF-Connecting-IP`, and passes the original Host to the application.
+Authenticated Origin Pulls can be added on top. Keep `reseller.trusted_forwarded_host:
+false` and local-only application trusted proxies. DNS migration must preserve existing
+records and DNSSEC settings. Test gray-cloud and orange-cloud customer domains before
+retiring the previous edge service.
+
 ## Testing
 
 ```bash

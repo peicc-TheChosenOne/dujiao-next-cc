@@ -3,6 +3,7 @@ package jobs
 import (
 	"context"
 	"errors"
+	"time"
 
 	jobconsumer "github.com/dujiao-next/internal/app/jobs/consumer"
 	"github.com/dujiao-next/internal/config"
@@ -68,6 +69,12 @@ func registerPeriodicTasks(scheduler *asynq.Scheduler, consumer *jobconsumer.Con
 			logger.Warnw("scheduler_register_reseller_confirm_ledger_failed", "error", err)
 		} else {
 			logger.Infow("scheduler_register_reseller_confirm_ledger_ok", "entry_id", entryID)
+		}
+	}
+	if consumer.ResellerDomainProvisioning != nil {
+		_, err := scheduler.Register("@every 1m", queue.NewResellerDomainProvisioningTask(), asynq.Queue(queue.DefaultQueue), asynq.Unique(45*time.Second), asynq.Timeout(5*time.Minute), asynq.MaxRetry(0))
+		if err != nil {
+			logger.Warnw("scheduler_register_reseller_domains_failed", "error", err)
 		}
 	}
 	if consumer.ProductMappingService != nil {

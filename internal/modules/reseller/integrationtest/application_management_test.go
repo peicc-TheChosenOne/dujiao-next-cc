@@ -26,7 +26,7 @@ func openResellerManagementServiceTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open db failed: %v", err)
 	}
-	if err := db.AutoMigrate(&userdomain.User{}, &admindomain.Admin{}, &resellerdomain.Profile{}, &resellerdomain.Domain{}, &resellerdomain.SiteConfig{}); err != nil {
+	if err := db.AutoMigrate(&userdomain.User{}, &admindomain.Admin{}, &resellerdomain.Profile{}, &resellerdomain.Domain{}, &resellerdomain.DomainCapacity{}, &resellerdomain.SiteConfig{}); err != nil {
 		t.Fatalf("migrate failed: %v", err)
 	}
 	return db

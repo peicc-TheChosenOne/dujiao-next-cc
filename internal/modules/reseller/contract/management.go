@@ -62,6 +62,8 @@ type SiteConfigRepository interface {
 // WithinTransaction 不得向用例暴露具体数据库连接类型。
 type ManagementStore interface {
 	WithinManagementTransaction(fn func(store ManagementStore) error) error
+	LockDomainCapacity() error
+	CountReservedCustomHostnames() (int64, error)
 	GetProfileByUserID(userID uint) (*resellerdomain.Profile, error)
 	GetProfileByID(id uint) (*resellerdomain.Profile, error)
 	GetProfileByIDForUpdate(id uint) (*resellerdomain.Profile, error)

@@ -875,7 +875,8 @@
         "pendingReview": "待审核",
         "active": "已启用",
         "disabled": "已停用",
-        "unknown": "未知状态"
+        "unknown": "未知状态",
+        "provisioning": "正在接入"
       },
       "domainVerification": {
         "pending": "待验证",
@@ -1450,7 +1451,28 @@
       "tableActions": "操作",
       "visit": "访问",
       "verifyTitle": "域名验证",
-      "verifyDesc": "自定义域名提交后进入待审核状态：请先将该域名解析（CNAME/A 记录）指向平台，再等待平台人工核验，通过后即生效。"
+      "verifyDesc": "自定义域名提交后进入待审核状态：请先将该域名解析（CNAME/A 记录）指向平台，再等待平台人工核验，通过后即生效。",
+      "provisioning": {
+        "connecting": "正在接入",
+        "dns_pending": "等待 DNS 生效",
+        "certificate_pending": "正在签发 HTTPS 证书",
+        "ready": "DNS / HTTPS 已就绪",
+        "deleting": "正在取消接入",
+        "disabled": "已取消接入",
+        "profile_inactive": "分销账号已停用"
+      },
+      "errors": {
+        "api_unavailable": "连接服务暂时不可用，系统会自动重试。",
+        "quota_exceeded": "平台域名接入额度已用完，请联系管理员。",
+        "rate_limited": "连接服务繁忙，系统会自动重试。",
+        "access_denied": "平台接入权限配置有误，请联系管理员。",
+        "validation_failed": "域名验证失败，请检查 DNS、CAA 记录后重试。",
+        "not_found": "云端绑定不存在，系统会重新接入。",
+        "domain_conflict": "根域名或 www 已被其他店铺占用，请联系管理员。"
+      },
+      "bindingInstructions": "先将根域名和 www 的 CNAME 指向下方入口，再提交根域名。系统自动验证并开通 HTTPS，全部就绪后等待管理员审核，审核通过才开放店铺。根域名需要 DNS 服务商支持 CNAME 扁平化或 ALIAS；不支持时请联系平台。域名托管在 Cloudflare 并开启代理（橙色云朵）时，请把 SSL/TLS 模式设为「完全（严格）」。",
+      "refreshValidation": "重新检查",
+      "submittedForValidation": "域名已提交，正在自动验证 DNS 和 HTTPS；验证通过后等待管理员审核。"
     },
     "site": {
       "title": "店铺设置",
@@ -1479,7 +1501,10 @@
       }
     },
     "products": {
-      "tabs": {"images": "商品图片", "pricing": "商品定价"},
+      "tabs": {
+        "images": "商品图片",
+        "pricing": "商品定价"
+      },
       "title": "商品管理",
       "description": "自定义本店商品图片，维护上架状态与售价。",
       "previewStore": "预览分销站",

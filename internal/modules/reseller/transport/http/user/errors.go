@@ -37,6 +37,9 @@ type mappedError struct {
 }
 
 var userManagementErrorRules = []mappedError{
+	{target: resellermodule.ErrDomainLimit, code: response.CodeTooManyRequests, key: "error.reseller_domain_limit"},
+	{target: productcontract.ErrNotFound, code: response.CodeNotFound, key: "error.not_found"},
+	{target: resellermodule.ErrDomainStatusInvalid, code: response.CodeBadRequest, key: "error.reseller_domain_status_invalid"},
 	{target: resellermodule.ErrNotOpened, code: response.CodeBadRequest, key: "error.bad_request"},
 	{target: resellermodule.ErrApplyDisabled, code: response.CodeForbidden, key: "error.forbidden"},
 	{target: resellermodule.ErrProfileInactive, code: response.CodeBadRequest, key: "error.forbidden"},

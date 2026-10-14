@@ -13,6 +13,24 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+// LockDomainCapacity 必须在额度保留事务中调用。
+func (r *Store) LockDomainCapacity() error {
+	row := resellerdomain.DomainCapacity{ID: 1}
+	if err := r.db.Clauses(clause.OnConflict{DoNothing: true}).Create(&row).Error; err != nil {
+		return err
+	}
+	return r.db.Clauses(clause.Locking{Strength: "UPDATE"}).First(&row, row.ID).Error
+}
+
+func (r *Store) CountReservedCustomHostnames() (int64, error) {
+	var count int64
+	err := r.db.Model(&resellerdomain.Domain{}).
+		Where("type = ? AND (deleted_at IS NULL OR external_hostname_id <> '')", resellerdomain.DomainTypeCustom).
+		Where("status <> ? OR external_hostname_id <> ''", resellerdomain.DomainStatusDisabled).
+		Count(&count).Error
+	return count, err
+}
+
 // UpsertDomain 创建域名，或恢复同域名的软删除记录。
 func (r *Store) UpsertDomain(input resellerdomain.Domain) (*resellerdomain.Domain, error) {
 	input.Domain = normalizeDomainForRepository(input.Domain)
@@ -39,6 +57,15 @@ func (r *Store) UpsertDomain(input resellerdomain.Domain) (*resellerdomain.Domai
 	existing.ResellerID = input.ResellerID
 	existing.Type = input.Type
 	existing.VerificationToken = input.VerificationToken
+	existing.RootDomain = input.RootDomain
+	existing.ExternalHostnameID = ""
+	existing.HostnameStatus = ""
+	existing.SSLStatus = ""
+	existing.ProvisioningStatus = input.ProvisioningStatus
+	existing.ProvisioningError = ""
+	existing.DNSRecordsJSON = input.DNSRecordsJSON
+	existing.LastSyncAt = nil
+	existing.SyncToken = ""
 	existing.VerificationStatus = input.VerificationStatus
 	existing.Status = input.Status
 	existing.IsPrimary = input.IsPrimary
@@ -204,4 +231,19 @@ func (r *Store) ListDomains(filter resellercontract.DomainListFilter) ([]reselle
 
 func normalizeDomainForRepository(raw string) string {
 	return strings.TrimSuffix(strings.ToLower(strings.TrimSpace(raw)), ".")
+}
+
+func (r *Store) ListDomainsForProvisioning(due, activeDue time.Time, limit int) ([]resellerdomain.Domain, error) {
+	rows := make([]resellerdomain.Domain, 0)
+	err := r.db.Where("deleted_at IS NULL AND type = ?", resellerdomain.DomainTypeCustom).
+		Where("((status IN ? AND (last_sync_at IS NULL OR last_sync_at < ?)) OR (status = ? AND root_domain <> '' AND (last_sync_at IS NULL OR last_sync_at < ?)) OR (provisioning_status = ? AND (last_sync_at IS NULL OR last_sync_at < ?)))", []string{resellerdomain.DomainStatusProvisioning, resellerdomain.DomainStatusPendingReview}, due, resellerdomain.DomainStatusActive, activeDue, "deleting", due).
+		Order("CASE WHEN status = 'active' THEN 1 ELSE 0 END, COALESCE(last_sync_at, created_at), id").Limit(limit).Find(&rows).Error
+	return rows, err
+}
+
+func (r *Store) ClaimDomainProvisioning(id uint, token string, now, leaseBefore time.Time) (bool, error) {
+	result := r.db.Model(&resellerdomain.Domain{}).Where("id = ? AND deleted_at IS NULL", id).
+		Where("sync_token = '' OR sync_token IS NULL OR last_sync_at < ?", leaseBefore).
+		Updates(map[string]any{"sync_token": token, "last_sync_at": now})
+	return result.RowsAffected == 1, result.Error
 }

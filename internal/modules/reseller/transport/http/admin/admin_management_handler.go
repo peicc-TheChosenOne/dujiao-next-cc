@@ -29,6 +29,7 @@ type AdminManagementService interface {
 	ApproveDomain(ctx context.Context, adminID, domainID uint) (*resellerdomain.Domain, error)
 	DisableDomain(ctx context.Context, adminID, domainID uint) (*resellerdomain.Domain, error)
 	SetPrimaryDomain(ctx context.Context, adminID, domainID uint) (*resellerdomain.Domain, error)
+	RefreshDomain(ctx context.Context, adminID, domainID uint) (*resellerdomain.Domain, error)
 }
 
 type AuditRecorder interface {
@@ -117,7 +118,7 @@ func (h *AdminManagementHandler) ListDomains(c *gin.Context) {
 		ginutil.RespondError(c, response.CodeInternal, "error.user_fetch_failed", err)
 		return
 	}
-	response.SuccessWithPage(c, rows, response.BuildPagination(page, pageSize, total))
+	response.SuccessWithPage(c, dto.NewAdminResellerDomainRespList(rows), response.BuildPagination(page, pageSize, total))
 }
 
 // ApproveProfile 审核通过分销商资料。
@@ -293,6 +294,10 @@ func (h *AdminManagementHandler) ApproveDomain(c *gin.Context) {
 // DisableDomain 禁用域名。
 func (h *AdminManagementHandler) DisableDomain(c *gin.Context) {
 	h.handleDomainAction(c, "reseller_domain_disable", "/admin/resellers/domains/:id/disable", h.management.DisableDomain)
+}
+
+func (h *AdminManagementHandler) RefreshDomain(c *gin.Context) {
+	h.handleDomainAction(c, "reseller_domain_refresh", "/admin/resellers/domains/:id/refresh", h.management.RefreshDomain)
 }
 
 // SetPrimaryDomain 将已启用且已验证域名设为主域名。

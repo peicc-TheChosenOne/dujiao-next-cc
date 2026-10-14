@@ -35,4 +35,10 @@ captcha:
   turnstile:
     secret_key: ""
 
+reseller:
+  domain_binding:
+    cloudflare:
+      # 仅授权平台 SaaS zone 的 SSL and Certificates Edit；不要使用全局 API Key。
+      api_token: ""
+
 # 真实代理地址、分销域名或其他环境专属配置也可以放在本文件中，覆盖普通配置。

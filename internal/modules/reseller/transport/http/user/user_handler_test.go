@@ -27,6 +27,8 @@ type managementStub struct {
 	err      error
 }
 
+func (s managementStub) DomainBindingInfo() (bool, string) { return false, "" }
+
 func (s managementStub) GetUserManagementSnapshot(userID uint) (*resellerdomain.Profile, []resellerdomain.Domain, bool, error) {
 	return s.profile, s.domains, s.canApply, s.err
 }
@@ -53,6 +55,10 @@ type siteConfigStub struct {
 	row     *resellerdomain.SiteConfig
 	canEdit bool
 	err     error
+}
+
+func (s managementStub) RefreshUserDomain(ctx context.Context, userID, domainID uint) (*resellerdomain.Domain, error) {
+	return &resellerdomain.Domain{ID: domainID}, s.err
 }
 
 func (s siteConfigStub) GetUserSiteConfig(userID uint) (*resellerdomain.Profile, *resellerdomain.SiteConfig, bool, error) {

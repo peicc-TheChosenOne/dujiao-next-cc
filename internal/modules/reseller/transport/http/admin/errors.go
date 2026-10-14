@@ -13,6 +13,8 @@ import (
 
 func respondAdminManagementError(c *gin.Context, err error) {
 	switch {
+	case errors.Is(err, resellercontract.ErrDomainLimit):
+		ginutil.RespondError(c, response.CodeTooManyRequests, "error.reseller_domain_limit", nil)
 	case errors.Is(err, productcontract.ErrNotFound):
 		ginutil.RespondError(c, response.CodeNotFound, "error.bad_request", nil)
 	case errors.Is(err, resellercontract.ErrProfileStatusInvalid),

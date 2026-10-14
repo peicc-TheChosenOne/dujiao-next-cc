@@ -56,6 +56,22 @@ docker compose -f compose.yml -f compose.public.yml up -d
 
 该模板默认仅绑定本机回环地址，宿主机端口由 `.env` 中的参数控制。外部连接需另外配置绑定地址、防火墙或安全组、密码认证及传输保护；实际地址和访问策略仅保存在本机配置中。
 
+## 分销商自有域名（Cloudflare for SaaS）
+
+分销商把根域名和 `www` 的 CNAME 指向平台入口、在分销后台提交根域名后，应用通过 Cloudflare API 创建自定义主机名，DNS 和 HTTPS 都就绪后再交给管理员审核。以下以 `example.com` 为平台域名：
+
+1. 平台域名的 NS 托管到 Cloudflare。迁移前导出原有全部解析记录，先在 Cloudflare 建成仅 DNS（灰云），确认未开启 DNSSEC 后再修改 NS；SSH、数据库、邮件等非网页记录始终保持灰云。
+2. 在该 zone 开通 Cloudflare for SaaS，前 100 个自定义主机名免费。新建 `origin.example.com` 指向服务器（代理开启）并设为 fallback origin，再建 `entry.example.com` CNAME 到它（代理开启），作为分销商的 CNAME 目标。
+3. 该 zone 的 SSL/TLS 模式设为「完全」。自定义主机名回源时 SNI 是分销商域名，平台证书无法匹配，因此不用「完全（严格）」，改为在源站只接受 Cloudflare 的连接。
+4. 源站 Nginx 参照 `nginx-cloudflare-saas.conf.example` 增加 `default_server`：只放行 Cloudflare 官方公布的网段，用 `CF-Connecting-IP` 还原访客 IP，原样传递 Host。网段列表放在服务器本地的 include 文件中；源站证书可使用 Cloudflare Origin CA。全部稳定后，云服务器安全组的 80/443 也只放行 Cloudflare 网段。
+5. 新建 API Token，只授予该 zone 的「SSL and Certificates: Edit」，写入 `secrets/config.private.yml` 的 `reseller.domain_binding.cloudflare.api_token`。
+6. 在 `config/config.yml` 中启用 `reseller.domain_binding`，填写 `cname_target: entry.example.com` 和 zone ID（在 Cloudflare 该 zone 概览页右侧），`custom_origin` 留空；`reseller.enabled`、`queue.enabled` 必须为 `true`，`reseller.trusted_forwarded_host` 保持 `false`。
+7. 用一个开启代理的测试域名（SSL 设为「完全（严格）」）和一个未开启代理的测试域名各走一遍提交、自动验证、审核、访问和禁用。
+
+默认每个分销商最多绑定 5 组根域名 / www，平台自动接入上限为 100 个主机名；未验证域名在 7 天后禁用并清理。可用 domain_binding 中的额度与到期配置调整，但提高总额度前必须核对 Cloudflare 计费。
+
+服务器迁移时只需修改 `origin.example.com` 等平台记录指向的地址，分销商的 CNAME 和已创建的自定义主机名不受影响。
+
 ## 运维记录与发布
 
 实际服务器地址、账号、后台入口、访问策略、证书、密钥、备份路径和部署验收结果应保存在仓库外的私有运维目录。不要将实际记录填回本指南或其他公开文档。

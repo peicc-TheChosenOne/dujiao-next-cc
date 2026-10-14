@@ -18,9 +18,11 @@ import (
 )
 
 type ManagementService interface {
+	DomainBindingInfo() (bool, string)
 	GetUserManagementSnapshot(userID uint) (*resellerdomain.Profile, []resellerdomain.Domain, bool, error)
 	ApplyUserReseller(userID uint, input resellermodule.ResellerApplyInput) (*resellerdomain.Profile, error)
 	SubmitUserCustomDomain(userID uint, rawDomain string) (*resellerdomain.Domain, error)
+	RefreshUserDomain(ctx context.Context, userID, domainID uint) (*resellerdomain.Domain, error)
 }
 
 type SiteConfigService interface {
@@ -90,7 +92,9 @@ func (h *UserHandler) GetManagementSnapshot(c *gin.Context) {
 		respondUserManagementError(c, err, "error.user_fetch_failed")
 		return
 	}
-	response.Success(c, dto.NewResellerManagementSnapshotResp(profile, domains, canApply))
+	snapshot := dto.NewResellerManagementSnapshotResp(profile, domains, canApply)
+	snapshot.DomainBindingEnabled, snapshot.DomainCNAMETarget = h.management.DomainBindingInfo()
+	response.Success(c, snapshot)
 }
 
 // ApplyProfile 提交当前用户的分销商申请。
@@ -142,6 +146,24 @@ func (h *UserHandler) SubmitCustomDomain(c *gin.Context) {
 		return
 	}
 	row, err := h.management.SubmitUserCustomDomain(uid, req.Domain)
+	if err != nil {
+		respondUserManagementError(c, err, "error.save_failed")
+		return
+	}
+	response.Success(c, dto.NewResellerDomainResp(row))
+}
+
+func (h *UserHandler) RefreshDomain(c *gin.Context) {
+	uid, ok := ginutil.GetUserID(c)
+	if !ok {
+		return
+	}
+	id, err := ginutil.ParseParamUint(c, "id")
+	if err != nil {
+		ginutil.RespondError(c, response.CodeBadRequest, "error.bad_request", nil)
+		return
+	}
+	row, err := h.management.RefreshUserDomain(c.Request.Context(), uid, id)
 	if err != nil {
 		respondUserManagementError(c, err, "error.save_failed")
 		return

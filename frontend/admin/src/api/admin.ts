@@ -483,6 +483,8 @@ export const adminAPI = {
     api.post(`/admin/resellers/domains/${id}/approve`, {}),
   disableResellerDomain: (id: number) =>
     api.post(`/admin/resellers/domains/${id}/disable`, {}),
+  refreshResellerDomain: (id: number) =>
+    api.post(`/admin/resellers/domains/${id}/refresh`, {}),
   setPrimaryResellerDomain: (id: number) =>
     api.post(`/admin/resellers/domains/${id}/set-primary`, {}),
   getResellerSiteConfigs: (params?: Record<string, unknown>) =>

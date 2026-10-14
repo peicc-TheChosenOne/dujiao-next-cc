@@ -922,7 +922,8 @@
         "pendingReview": "Pending Review",
         "active": "Active",
         "disabled": "Disabled",
-        "unknown": "Unknown Status"
+        "unknown": "Unknown Status",
+        "provisioning": "Connecting"
       },
       "domainVerification": {
         "pending": "Pending Verification",
@@ -1497,7 +1498,28 @@
       "tableActions": "Actions",
       "visit": "Visit",
       "verifyTitle": "Domain verification",
-      "verifyDesc": "A custom domain enters pending review after submission: first point its DNS (CNAME/A record) to the platform, then wait for manual review by the platform — it goes live once verified."
+      "verifyDesc": "A custom domain enters pending review after submission: first point its DNS (CNAME/A record) to the platform, then wait for manual review by the platform — it goes live once verified.",
+      "provisioning": {
+        "connecting": "Connecting",
+        "dns_pending": "Waiting for DNS",
+        "certificate_pending": "Issuing HTTPS certificate",
+        "ready": "DNS / HTTPS ready",
+        "deleting": "Removing binding",
+        "disabled": "Binding removed",
+        "profile_inactive": "Reseller account disabled"
+      },
+      "errors": {
+        "api_unavailable": "Connection service is unavailable; automatic retry is scheduled.",
+        "quota_exceeded": "Platform domain capacity is exhausted. Contact the administrator.",
+        "rate_limited": "Connection service is busy; automatic retry is scheduled.",
+        "access_denied": "Platform permissions need correction. Contact the administrator.",
+        "validation_failed": "Validation failed. Check DNS and CAA records, then retry.",
+        "not_found": "Remote binding is missing; it will be recreated.",
+        "domain_conflict": "The root or www hostname belongs to another store. Contact the administrator."
+      },
+      "bindingInstructions": "Point the root and www CNAME records to the target below, then submit the root domain. DNS and HTTPS are verified automatically before administrator review. The store opens after approval. Your DNS provider must support CNAME flattening or ALIAS at the root; otherwise contact the platform. If your domain is on Cloudflare with the proxy (orange cloud) on, set the SSL/TLS mode to Full (strict).",
+      "refreshValidation": "Check again",
+      "submittedForValidation": "Domain submitted. DNS and HTTPS validation is running; administrator review follows."
     },
     "site": {
       "title": "Store Settings",
@@ -1526,7 +1548,10 @@
       }
     },
     "products": {
-      "tabs": {"images": "Product images", "pricing": "Product pricing"},
+      "tabs": {
+        "images": "Product images",
+        "pricing": "Product pricing"
+      },
       "title": "Product management",
       "description": "Customize your product images and manage listing status and retail prices.",
       "previewStore": "Preview storefront",

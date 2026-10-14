@@ -47,3 +47,13 @@ test('admin reseller domain actions follow domain state', () => {
   assert.deepEqual(getResellerDomainActionState('active'), { canApprove: false, canDisable: true })
   assert.deepEqual(getResellerDomainActionState('disabled'), { canApprove: true, canDisable: false })
 })
+
+test('automatic domains require technical readiness before approval', () => {
+  const ready = { root_domain: 'customer.example.test', hostname_status: 'active', ssl_status: 'active', verification_status: 'verified' }
+  assert.equal(getResellerDomainActionState('provisioning', ready).canApprove, false)
+  assert.equal(getResellerDomainActionState('pending_review', { ...ready, ssl_status: 'pending' }).canApprove, false)
+  assert.equal(getResellerDomainActionState('pending_review', { ...ready, provisioning_error: 'api_unavailable' }).canApprove, false)
+  assert.equal(getResellerDomainActionState('pending_review', ready).canApprove, true)
+  assert.equal(getResellerDomainActionState('disabled', ready).canApprove, false)
+  assert.equal(getResellerDomainActionState('provisioning', ready).canDisable, true)
+})

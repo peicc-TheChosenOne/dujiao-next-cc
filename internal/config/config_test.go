@@ -127,3 +127,32 @@ func TestAbsentBaseStillSupportsEnvironmentConfiguration(t *testing.T) {
 		t.Fatal("legacy environment-only startup is not supported")
 	}
 }
+
+func TestAutomaticDomainBindingRequiresPrivateCredentialsAndValidHosts(t *testing.T) {
+	base := `reseller:
+  enabled: true
+  domain_binding:
+    enabled: true
+    cname_target: entry.example.test
+    cloudflare:
+      zone_id: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+queue:
+  enabled: true
+`
+	dir := t.TempDir()
+	file := writeConfig(t, dir, "config.yml", base)
+	if _, err := loadConfig(file, ""); err == nil {
+		t.Fatal("enabled provider without token accepted")
+	}
+	writeConfig(t, dir, "config.private.yml", "reseller:\n  domain_binding:\n    cloudflare:\n      api_token: test-private-token\n")
+	cfg, err := loadConfig(file, "")
+	if err != nil || cfg.Reseller.DomainBinding.Cloudflare.APIToken != "test-private-token" {
+		t.Fatal("private provider credentials were not loaded")
+	}
+	for _, host := range []string{"https://entry.example.test", "127.0.0.1", "entry.example.test:443", "entry.example.test/path"} {
+		writeConfig(t, dir, "config.yml", strings.Replace(base, "entry.example.test", host, 1))
+		if _, err := loadConfig(file, ""); err == nil {
+			t.Fatalf("invalid target accepted: %s", host)
+		}
+	}
+}

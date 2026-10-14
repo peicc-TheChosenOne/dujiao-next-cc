@@ -191,6 +191,7 @@ const settlementClass = (status?: string) => {
 }
 
 const domainStatusLabel = (status?: string) => {
+  if (status === 'provisioning') return t('admin.resellerDomains.status.provisioning')
   if (status === 'pending_review') return t('admin.resellerProfileDetail.domainStatus.pendingReview')
   if (status === 'active') return t('admin.resellerProfileDetail.domainStatus.active')
   if (status === 'disabled') return t('admin.resellerProfileDetail.domainStatus.disabled')

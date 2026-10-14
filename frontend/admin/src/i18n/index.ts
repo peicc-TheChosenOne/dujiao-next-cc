@@ -3860,6 +3860,7 @@ const messages = {
           custom: '自定义域名',
         },
         status: {
+          provisioning: "正在接入",
           pendingReview: '待审核',
           active: '已启用',
           disabled: '已禁用',
@@ -3869,7 +3870,11 @@ const messages = {
           verified: '已验证',
           failed: '验证失败',
         },
+        provisioning: { connecting: "正在接入", dns_pending: "等待 DNS 生效", certificate_pending: "正在签发 HTTPS 证书", ready: "DNS / HTTPS 已就绪", deleting: "正在取消接入", disabled: "已取消接入", profile_inactive: "分销账号已停用" },
+        errors: { quota_exceeded: "平台域名接入额度已用完，请联系管理员。", api_unavailable: "连接服务暂时不可用，系统会自动重试。", rate_limited: "连接服务繁忙，系统会自动重试。", access_denied: "平台接入权限配置有误，请联系管理员。", validation_failed: "域名验证失败，请检查 DNS、CAA 记录后重试。", not_found: "云端绑定不存在，系统会重新接入。", domain_conflict: "根域名或 www 已被其他店铺占用，请联系管理员。" },
         actions: {
+          refresh: "重新检查 / 接入",
+          refreshFailed: "重新检查失败",
           approve: '通过',
           disable: '禁用',
           approveConfirm: '确认通过域名 #{id} 吗？',
@@ -8358,6 +8363,7 @@ const messages = {
           custom: '自訂域名',
         },
         status: {
+          provisioning: "正在接入",
           pendingReview: '待審核',
           active: '已啟用',
           disabled: '已禁用',
@@ -8367,7 +8373,11 @@ const messages = {
           verified: '已驗證',
           failed: '驗證失敗',
         },
+        provisioning: { connecting: "正在接入", dns_pending: "等待 DNS 生效", certificate_pending: "正在簽發 HTTPS 憑證", ready: "DNS / HTTPS 已就緒", deleting: "正在取消接入", disabled: "已取消接入", profile_inactive: "分銷帳號已停用" },
+        errors: { quota_exceeded: "平台網域接入額度已用完，請聯絡管理員。", api_unavailable: "連線服務暫時不可用，系統會自動重試。", rate_limited: "連線服務繁忙，系統會自動重試。", access_denied: "平台接入權限設定有誤，請聯絡管理員。", validation_failed: "網域驗證失敗，請檢查 DNS、CAA 記錄後重試。", not_found: "雲端綁定不存在，系統會重新接入。", domain_conflict: "根網域或 www 已被其他店鋪佔用，請聯絡管理員。" },
         actions: {
+          refresh: "重新檢查 / 接入",
+          refreshFailed: "重新檢查失敗",
           approve: '通過',
           disable: '禁用',
           approveConfirm: '確認通過域名 #{id} 嗎？',
@@ -12856,6 +12866,7 @@ const messages = {
           custom: 'Custom Domain',
         },
         status: {
+          provisioning: "Connecting",
           pendingReview: 'Pending Review',
           active: 'Active',
           disabled: 'Disabled',
@@ -12865,7 +12876,11 @@ const messages = {
           verified: 'Verified',
           failed: 'Failed',
         },
+        provisioning: { connecting: "Connecting", dns_pending: "Waiting for DNS", certificate_pending: "Issuing HTTPS certificate", ready: "DNS / HTTPS ready", deleting: "Removing binding", disabled: "Binding removed", profile_inactive: "Reseller account disabled" },
+        errors: { quota_exceeded: "Platform domain capacity is exhausted. Contact the administrator.", api_unavailable: "Connection service is unavailable; automatic retry is scheduled.", rate_limited: "Connection service is busy; automatic retry is scheduled.", access_denied: "Platform permissions need correction. Contact the administrator.", validation_failed: "Validation failed. Check DNS and CAA records, then retry.", not_found: "Remote binding is missing; it will be recreated.", domain_conflict: "The root or www hostname belongs to another store. Contact the administrator." },
         actions: {
+          refresh: "Check / reconnect",
+          refreshFailed: "Unable to recheck",
           approve: 'Approve',
           disable: 'Disable',
           approveConfirm: 'Approve domain #{id}?',

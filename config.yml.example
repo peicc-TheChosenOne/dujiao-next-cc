@@ -182,6 +182,20 @@ reseller:
   # 将统一入口域名（例如 entry.example.com）加入 main_hosts，避免分配给分销商。
   # 生产启用前请配置为已经做好 wildcard DNS/TLS 的域名，例如 shop.example.com。
   subdomain_base: ""
+  # Cloudflare for SaaS：自动验证 DNS/HTTPS，全部就绪后才允许管理员审核。
+  # 启用前必须配置 SaaS fallback origin、统一入口和源站（见 deploy/nginx-cloudflare-saas.conf.example）；queue.enabled 必须为 true。
+  domain_binding:
+    enabled: false
+    provider: cloudflare
+    cname_target: "" # 例如 entry.example.com，填写纯主机名，不带协议或路径。
+    sync_batch_size: 50
+    max_custom_domains_per_reseller: 5 # 每个分销商的根域名组数，每组包含根域名和 www。
+    max_hostnames: 100 # 平台自动接入主机名总上限；提高前先核对 Cloudflare 计费。
+    pending_expiry_hours: 168 # 未完成技术验证的域名超过 7 天自动禁用并清理远端资源。
+    cloudflare:
+      zone_id: ""
+      # 通常留空，使用 SaaS zone 的 fallback origin；只有需要逐个主机名指定其他源站时才填写。
+      custom_origin: ""
   # 是否允许普通用户在个人中心自助提交分销商申请。
   self_apply_enabled: true
   # 分销利润入账后转为「可提现」的确认天数（0 表示即时到账，最大 3650）。

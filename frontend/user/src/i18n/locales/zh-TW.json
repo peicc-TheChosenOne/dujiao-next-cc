@@ -922,7 +922,8 @@
         "pendingReview": "待審核",
         "active": "已啟用",
         "disabled": "已停用",
-        "unknown": "未知狀態"
+        "unknown": "未知狀態",
+        "provisioning": "正在接入"
       },
       "domainVerification": {
         "pending": "待驗證",
@@ -1497,7 +1498,28 @@
       "tableActions": "操作",
       "visit": "造訪",
       "verifyTitle": "域名驗證",
-      "verifyDesc": "自訂域名提交後進入待審核狀態：請先將該域名解析（CNAME/A 記錄）指向平台，再等待平台人工核驗，通過後即生效。"
+      "verifyDesc": "自訂域名提交後進入待審核狀態：請先將該域名解析（CNAME/A 記錄）指向平台，再等待平台人工核驗，通過後即生效。",
+      "provisioning": {
+        "connecting": "正在接入",
+        "dns_pending": "等待 DNS 生效",
+        "certificate_pending": "正在簽發 HTTPS 憑證",
+        "ready": "DNS / HTTPS 已就緒",
+        "deleting": "正在取消接入",
+        "disabled": "已取消接入",
+        "profile_inactive": "分銷帳號已停用"
+      },
+      "errors": {
+        "api_unavailable": "連線服務暫時不可用，系統會自動重試。",
+        "quota_exceeded": "平台網域接入額度已用完，請聯絡管理員。",
+        "rate_limited": "連線服務繁忙，系統會自動重試。",
+        "access_denied": "平台接入權限設定有誤，請聯絡管理員。",
+        "validation_failed": "網域驗證失敗，請檢查 DNS、CAA 記錄後重試。",
+        "not_found": "雲端綁定不存在，系統會重新接入。",
+        "domain_conflict": "根網域或 www 已被其他店鋪佔用，請聯絡管理員。"
+      },
+      "bindingInstructions": "先將根網域和 www 的 CNAME 指向下方入口，再提交根網域。系統自動驗證並開通 HTTPS，全部就緒後等待管理員審核，審核通過才開放店鋪。根網域需要 DNS 服務商支援 CNAME 扁平化或 ALIAS；不支援時請聯絡平台。網域託管在 Cloudflare 並開啟代理（橘色雲朵）時，請將 SSL/TLS 模式設為「完全（嚴格）」。",
+      "refreshValidation": "重新檢查",
+      "submittedForValidation": "網域已提交，正在自動驗證 DNS 和 HTTPS；驗證通過後等待管理員審核。"
     },
     "site": {
       "title": "店鋪設定",
@@ -1526,7 +1548,10 @@
       }
     },
     "products": {
-      "tabs": {"images": "商品圖片", "pricing": "商品定價"},
+      "tabs": {
+        "images": "商品圖片",
+        "pricing": "商品定價"
+      },
       "title": "商品管理",
       "description": "自訂本店商品圖片，維護上架狀態與售價。",
       "previewStore": "預覽分銷站",

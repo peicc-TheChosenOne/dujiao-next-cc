@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -302,7 +303,23 @@ type ResellerConfig struct {
 	SubdomainBase        string   `mapstructure:"subdomain_base"`
 	SelfApplyEnabled     bool     `mapstructure:"self_apply_enabled"`
 	// SettlementConfirmDays 分销利润入账后转为可提现的确认天数（0 表示即时到账）。
-	SettlementConfirmDays int `mapstructure:"settlement_confirm_days"`
+	SettlementConfirmDays int                         `mapstructure:"settlement_confirm_days"`
+	DomainBinding         ResellerDomainBindingConfig `mapstructure:"domain_binding"`
+}
+
+type ResellerDomainBindingConfig struct {
+	Enabled                     bool   `mapstructure:"enabled"`
+	Provider                    string `mapstructure:"provider"`
+	CNAMETarget                 string `mapstructure:"cname_target"`
+	SyncBatchSize               int    `mapstructure:"sync_batch_size"`
+	MaxCustomDomainsPerReseller int    `mapstructure:"max_custom_domains_per_reseller"`
+	MaxHostnames                int    `mapstructure:"max_hostnames"`
+	PendingExpiryHours          int    `mapstructure:"pending_expiry_hours"`
+	Cloudflare                  struct {
+		ZoneID       string `mapstructure:"zone_id"`
+		APIToken     string `mapstructure:"api_token"`
+		CustomOrigin string `mapstructure:"custom_origin"`
+	} `mapstructure:"cloudflare"`
 }
 
 // Load 按默认值、普通配置、私有配置、环境变量的顺序加载配置。
@@ -445,6 +462,16 @@ func loadConfig(configFile, privateFile string) (*Config, error) {
 	v.SetDefault("reseller.subdomain_base", "")
 	v.SetDefault("reseller.self_apply_enabled", true)
 	v.SetDefault("reseller.settlement_confirm_days", 7)
+	v.SetDefault("reseller.domain_binding.enabled", false)
+	v.SetDefault("reseller.domain_binding.provider", "cloudflare")
+	v.SetDefault("reseller.domain_binding.cname_target", "")
+	v.SetDefault("reseller.domain_binding.sync_batch_size", 50)
+	v.SetDefault("reseller.domain_binding.max_custom_domains_per_reseller", 5)
+	v.SetDefault("reseller.domain_binding.max_hostnames", 100)
+	v.SetDefault("reseller.domain_binding.pending_expiry_hours", 168)
+	v.SetDefault("reseller.domain_binding.cloudflare.zone_id", "")
+	v.SetDefault("reseller.domain_binding.cloudflare.api_token", "")
+	v.SetDefault("reseller.domain_binding.cloudflare.custom_origin", "")
 
 	// 环境变量支持
 	v.AutomaticEnv()                                   // 自动读取环境变量
@@ -482,5 +509,36 @@ func loadConfig(configFile, privateFile string) (*Config, error) {
 	if err := v.Unmarshal(&cfg); err != nil {
 		return nil, fmt.Errorf("invalid configuration field types; check %q and %q", v.ConfigFileUsed(), privateFile)
 	}
+	if binding := cfg.Reseller.DomainBinding; binding.Enabled {
+		if binding.MaxCustomDomainsPerReseller < 1 || binding.MaxHostnames < 2 || binding.PendingExpiryHours < 1 || binding.PendingExpiryHours > 8760 {
+			return nil, fmt.Errorf("reseller.domain_binding requires positive domain limits and pending_expiry_hours between 1 and 8760")
+		}
+		validZone := len(binding.Cloudflare.ZoneID) == 32
+		for _, ch := range binding.Cloudflare.ZoneID {
+			if !(ch >= '0' && ch <= '9' || ch >= 'a' && ch <= 'f') {
+				validZone = false
+			}
+		}
+		if !cfg.Reseller.Enabled || !cfg.Queue.Enabled || binding.Provider != "cloudflare" || !validBindingHost(binding.CNAMETarget) || binding.Cloudflare.CustomOrigin != "" && !validBindingHost(binding.Cloudflare.CustomOrigin) || !validZone || strings.TrimSpace(binding.Cloudflare.APIToken) == "" || binding.SyncBatchSize < 1 || binding.SyncBatchSize > 500 {
+			return nil, fmt.Errorf("reseller.domain_binding requires enabled reseller and queue, cloudflare provider, cname_target, zone_id, private api_token and sync_batch_size between 1 and 500")
+		}
+	}
 	return &cfg, nil
+}
+
+func validBindingHost(host string) bool {
+	if len(host) > 253 || !strings.Contains(host, ".") || net.ParseIP(host) != nil {
+		return false
+	}
+	for _, label := range strings.Split(host, ".") {
+		if label == "" || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
+			return false
+		}
+		for _, ch := range label {
+			if !(ch >= 'a' && ch <= 'z' || ch >= '0' && ch <= '9' || ch == '-') {
+				return false
+			}
+		}
+	}
+	return true
 }

@@ -1,6 +1,7 @@
 package presenter
 
 import (
+	"encoding/json"
 	"time"
 
 	resellerdomain "github.com/dujiao-next/internal/modules/reseller/domain"
@@ -106,23 +107,32 @@ type ResellerManagementProfileResp struct {
 }
 
 type ResellerDomainResp struct {
-	ID                 uint       `json:"id"`
-	Domain             string     `json:"domain"`
-	Type               string     `json:"type"`
-	VerificationToken  string     `json:"verification_token,omitempty"`
-	VerificationStatus string     `json:"verification_status"`
-	Status             string     `json:"status"`
-	IsPrimary          bool       `json:"is_primary"`
-	VerifiedAt         *time.Time `json:"verified_at,omitempty"`
-	CreatedAt          time.Time  `json:"created_at"`
-	UpdatedAt          time.Time  `json:"updated_at"`
+	ID                 uint                               `json:"id"`
+	Domain             string                             `json:"domain"`
+	Type               string                             `json:"type"`
+	VerificationToken  string                             `json:"verification_token,omitempty"`
+	VerificationStatus string                             `json:"verification_status"`
+	Status             string                             `json:"status"`
+	IsPrimary          bool                               `json:"is_primary"`
+	VerifiedAt         *time.Time                         `json:"verified_at,omitempty"`
+	CreatedAt          time.Time                          `json:"created_at"`
+	UpdatedAt          time.Time                          `json:"updated_at"`
+	RootDomain         string                             `json:"root_domain,omitempty"`
+	HostnameStatus     string                             `json:"hostname_status,omitempty"`
+	SSLStatus          string                             `json:"ssl_status,omitempty"`
+	ProvisioningStatus string                             `json:"provisioning_status,omitempty"`
+	ProvisioningError  string                             `json:"provisioning_error,omitempty"`
+	LastSyncAt         *time.Time                         `json:"last_sync_at,omitempty"`
+	DNSRecords         []resellercontract.DomainDNSRecord `json:"dns_records,omitempty"`
 }
 
 type ResellerManagementSnapshotResp struct {
-	Opened   bool                           `json:"opened"`
-	CanApply bool                           `json:"can_apply"`
-	Profile  *ResellerManagementProfileResp `json:"profile,omitempty"`
-	Domains  []ResellerDomainResp           `json:"domains"`
+	Opened               bool                           `json:"opened"`
+	CanApply             bool                           `json:"can_apply"`
+	Profile              *ResellerManagementProfileResp `json:"profile,omitempty"`
+	Domains              []ResellerDomainResp           `json:"domains"`
+	DomainBindingEnabled bool                           `json:"domain_binding_enabled"`
+	DomainCNAMETarget    string                         `json:"domain_cname_target,omitempty"`
 }
 
 type ResellerSiteConfigResp struct {
@@ -297,6 +307,9 @@ func NewResellerDomainResp(row *resellerdomain.Domain) ResellerDomainResp {
 	if row == nil {
 		return ResellerDomainResp{}
 	}
+	var records []resellercontract.DomainDNSRecord
+	encoded, _ := json.Marshal(row.DNSRecordsJSON["records"])
+	_ = json.Unmarshal(encoded, &records)
 	return ResellerDomainResp{
 		ID:                 row.ID,
 		Domain:             row.Domain,
@@ -308,7 +321,28 @@ func NewResellerDomainResp(row *resellerdomain.Domain) ResellerDomainResp {
 		VerifiedAt:         row.VerifiedAt,
 		CreatedAt:          row.CreatedAt,
 		UpdatedAt:          row.UpdatedAt,
+		RootDomain:         row.RootDomain,
+		HostnameStatus:     row.HostnameStatus,
+		SSLStatus:          row.SSLStatus,
+		ProvisioningStatus: row.ProvisioningStatus,
+		ProvisioningError:  row.ProvisioningError,
+		LastSyncAt:         row.LastSyncAt,
+		DNSRecords:         records,
 	}
+}
+
+type AdminResellerDomainResp struct {
+	ResellerDomainResp
+	ResellerID uint                      `json:"reseller_id"`
+	Profile    *AdminResellerProfileResp `json:"profile,omitempty"`
+}
+
+func NewAdminResellerDomainRespList(rows []resellerdomain.Domain) []AdminResellerDomainResp {
+	result := make([]AdminResellerDomainResp, 0, len(rows))
+	for i := range rows {
+		result = append(result, AdminResellerDomainResp{ResellerDomainResp: NewResellerDomainResp(&rows[i]), ResellerID: rows[i].ResellerID, Profile: NewAdminResellerProfileResp(rows[i].Profile)})
+	}
+	return result
 }
 
 func NewResellerDomainRespList(rows []resellerdomain.Domain) []ResellerDomainResp {

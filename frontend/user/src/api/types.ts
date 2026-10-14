@@ -229,6 +229,13 @@ export interface ResellerDomainData {
     verified_at?: string
     created_at: string
     updated_at: string
+    root_domain?: string
+    hostname_status?: string
+    ssl_status?: string
+    provisioning_status?: string
+    provisioning_error?: string
+    last_sync_at?: string
+    dns_records?: { type: string; name: string; value: string }[]
 }
 
 export interface ResellerManagementSnapshotData {
@@ -236,6 +243,8 @@ export interface ResellerManagementSnapshotData {
     can_apply: boolean
     profile?: ResellerManagementProfileData
     domains: ResellerDomainData[]
+    domain_binding_enabled?: boolean
+    domain_cname_target?: string
 }
 
 export interface ResellerApplyPayload {

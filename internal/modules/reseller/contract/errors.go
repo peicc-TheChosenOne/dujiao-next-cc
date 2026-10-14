@@ -19,6 +19,7 @@ var (
 	ErrDomainInvalid = errors.New("reseller domain invalid")
 	// ErrDomainConflict 表示域名已被占用。
 	ErrDomainConflict = errors.New("reseller domain conflict")
+	ErrDomainLimit    = errors.New("reseller domain limit reached")
 	// ErrDomainStatusInvalid 表示域名状态流转不合法。
 	ErrDomainStatusInvalid = errors.New("reseller domain status invalid")
 	// ErrSubdomainBaseMissing 表示系统子域基址未配置。

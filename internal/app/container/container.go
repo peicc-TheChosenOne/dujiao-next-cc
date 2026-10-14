@@ -168,6 +168,7 @@ type Container struct {
 	NotificationService           *notificationapp.Service
 	AffiliateService              *affiliateapp.Service
 	ResellerDomainResolver        *reseller.DomainResolver
+	ResellerDomainProvisioning    *reseller.DomainProvisioningService
 	ResellerPricingResolver       *orderapp.ResellerPricingResolver
 	ResellerManagementService     *reseller.ManagementService
 	ResellerSiteConfigService     *reseller.SiteConfigService

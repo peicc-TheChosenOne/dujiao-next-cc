@@ -5,7 +5,7 @@
       :description="t('resellerConsole.domains.description')"
     >
       <template #actions>
-        <Button type="button" variant="outline" size="sm" @click="load">
+        <Button type="button" variant="outline" size="sm" @click="load()">
           <RotateCw class="h-4 w-4" />
           {{ t('orders.filters.refresh') }}
         </Button>
@@ -136,7 +136,14 @@
               <p v-else class="rounded-lg border border-dashed border-border bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
                 {{ t('resellerConsole.domains.submitDisabledDesc') }}
               </p>
-              <p class="mt-2 text-xs leading-relaxed text-muted-foreground">{{ t('resellerConsole.domains.verifyDesc') }}</p>
+              <template v-if="snapshot?.domain_binding_enabled">
+                <p class="mt-2 text-xs leading-relaxed text-muted-foreground">{{ t('resellerConsole.domains.bindingInstructions') }}</p>
+                <div class="mt-2 flex flex-wrap items-center gap-2 font-mono text-sm">
+                  <span>CNAME @ / www → {{ snapshot.domain_cname_target }}</span>
+                  <ResellerCopyButton v-if="snapshot.domain_cname_target" :value="snapshot.domain_cname_target" :label="t('resellerConsole.common.copy')" />
+                </div>
+              </template>
+              <p v-else class="mt-2 text-xs leading-relaxed text-muted-foreground">{{ t('resellerConsole.domains.verifyDesc') }}</p>
             </div>
           </section>
 
@@ -170,6 +177,14 @@
                       <ResellerStatusBadge v-if="item.is_primary && isActiveVerifiedDomain(item)" :label="t('personalCenter.reseller.primaryDomain')" tone="accent" />
                     </div>
                     <div class="mt-1 text-xs text-muted-foreground md:hidden">{{ domainTypeLabel(item.type) }}</div>
+                    <div v-if="item.provisioning_status" class="mt-2 text-xs text-muted-foreground">
+                      {{ t(`resellerConsole.domains.provisioning.${item.provisioning_status}`) }}
+                      <p v-if="item.provisioning_error" class="mt-1 text-warning">{{ t(`resellerConsole.domains.errors.${item.provisioning_error}`) }}</p>
+                      <div v-for="record in (item.domain === item.root_domain ? item.dns_records : [])" :key="record.name" class="mt-1 flex flex-wrap items-center gap-2 font-mono">
+                        <span>{{ record.type }} {{ record.name }} → {{ record.value }}</span>
+                        <ResellerCopyButton :value="record.value" :label="t('resellerConsole.common.copy')" />
+                      </div>
+                    </div>
                   </div>
 
                   <div class="flex items-center justify-between gap-3 md:block">
@@ -188,6 +203,9 @@
                   </div>
 
                   <div class="flex flex-wrap items-center gap-2 md:justify-end">
+                    <Button v-if="snapshot?.domain_binding_enabled && item.type === 'custom' && item.status !== RESELLER_DOMAIN_STATUS_DISABLED" variant="outline" size="sm" :disabled="refreshingId === item.id" @click="refreshDomain(item.id)">
+                      {{ t('resellerConsole.domains.refreshValidation') }}
+                    </Button>
                     <ResellerCopyButton :value="item.domain" :label="t('resellerConsole.common.copy')" />
                     <Button v-if="isActiveVerifiedDomain(item)" as-child variant="ghost" size="sm">
                       <a :href="`https://${item.domain}`" target="_blank" rel="noopener noreferrer">
@@ -215,7 +233,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { CircleAlert, ExternalLink, Globe2, Link2, Plus, RotateCw } from 'lucide-vue-next'
 import { resellerAPI, type ResellerDomainData, type ResellerManagementSnapshotData } from '../../api'
@@ -244,6 +262,9 @@ import { getResellerDomainStatusKey } from '../../utils/resellerManagement'
 const { t } = useI18n()
 const loading = ref(false)
 const submitting = ref(false)
+const refreshingId = ref<number | null>(null)
+let pollTimer: ReturnType<typeof setInterval> | undefined
+let fetching = false
 const snapshot = ref<ResellerManagementSnapshotData | null>(null)
 const alert = ref<PageAlert | null>(null)
 const domainForm = reactive({ domain: '' })
@@ -259,15 +280,27 @@ const activeDomains = computed(() => domains.value.filter(isActiveVerifiedDomain
 const primaryDomain = computed(() => activeDomains.value.find((d) => d.is_primary) || null)
 const pendingDomains = computed(() => domains.value.filter((d) => d.status === RESELLER_DOMAIN_STATUS_PENDING_REVIEW || d.verification_status === RESELLER_DOMAIN_VERIFICATION_PENDING))
 
-const load = async () => {
-  loading.value = true
-  alert.value = null
+const load = async (silent = false) => {
+  if (fetching) return
+  fetching = true
+  if (!silent) { loading.value = true; alert.value = null }
   try {
     const response = await resellerAPI.managementProfile()
     snapshot.value = response.data.data || null
   } finally {
-    loading.value = false
+    fetching = false
+    if (!silent) loading.value = false
   }
+}
+
+const refreshDomain = async (id: number) => {
+  refreshingId.value = id
+  try {
+    await resellerAPI.refreshDomain(id)
+    await load(true)
+  } catch (err) {
+    alert.value = { level: 'error', message: err instanceof Error ? err.message : t('personalCenter.common.saveFailed') }
+  } finally { refreshingId.value = null }
 }
 
 const submitDomain = async () => {
@@ -278,7 +311,7 @@ const submitDomain = async () => {
     await resellerAPI.submitDomain({ domain: domainForm.domain.trim() })
     domainForm.domain = ''
     await load()
-    alert.value = { level: 'success', message: t('personalCenter.common.saveSuccess') }
+    alert.value = { level: 'success', message: t(snapshot.value?.domain_binding_enabled ? 'resellerConsole.domains.submittedForValidation' : 'personalCenter.common.saveSuccess') }
   } catch (err) {
     // 透传后端细分错误（域名格式无效 / 不能用主站域名 / 已被占用等）。
     const message = err instanceof Error && err.message ? err.message : t('personalCenter.common.saveFailed')
@@ -317,5 +350,13 @@ const domainTypeLabel = (type?: string) => {
   return type || '-'
 }
 
-onMounted(load)
+onMounted(() => {
+  void load()
+  pollTimer = setInterval(() => {
+    if (snapshot.value?.domain_binding_enabled && domains.value.some(item => item.status === 'provisioning' || item.status === RESELLER_DOMAIN_STATUS_PENDING_REVIEW)) {
+      void load(true).catch(() => {})
+    }
+  }, 15000)
+})
+onUnmounted(() => { if (pollTimer) clearInterval(pollTimer) })
 </script>

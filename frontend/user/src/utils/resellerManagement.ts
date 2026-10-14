@@ -32,6 +32,7 @@ export const getResellerProfileStatusKey = (status?: string) => {
 }
 
 export const getResellerDomainStatusKey = (status?: string) => {
+  if (status === 'provisioning') return 'provisioning'
   if (status === RESELLER_DOMAIN_STATUS_PENDING_REVIEW) return 'pendingReview'
   if (status === RESELLER_DOMAIN_STATUS_ACTIVE) return 'active'
   if (status === RESELLER_DOMAIN_STATUS_DISABLED) return 'disabled'

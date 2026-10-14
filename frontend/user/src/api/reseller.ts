@@ -15,6 +15,7 @@ export const resellerAPI = {
     apply: (data: ResellerApplyPayload) => userApi.post('/reseller/apply', data),
     domains: () => userApi.get('/reseller/domains'),
     submitDomain: (data: ResellerCustomDomainPayload) => userApi.post('/reseller/domains', data),
+    refreshDomain: (id: number) => userApi.post(`/reseller/domains/${id}/refresh`, {}),
     siteConfig: () => userApi.get('/reseller/site-config'),
     updateSiteConfig: (data: ResellerSiteConfigPayload) => userApi.put('/reseller/site-config', data),
     uploadImage: (file: File) => {
