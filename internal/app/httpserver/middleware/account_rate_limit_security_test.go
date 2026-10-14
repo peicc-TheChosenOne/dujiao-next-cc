@@ -10,7 +10,7 @@ import (
 
 func TestAccountRateLimitRejectsUnparseableAndOversizedBodies(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	for _, mode := range []string{"normal", "padded", "trailing_json"} {
+	for _, mode := range []string{"normal", "padded", "trailing_json", "case_alias", "mixed_case_fields", "duplicate_with_null", "duplicate_field"} {
 		t.Run(mode, func(t *testing.T) {
 			r := gin.New()
 			_ = r.SetTrustedProxies(nil)
@@ -39,6 +39,18 @@ func TestAccountRateLimitRejectsUnparseableAndOversizedBodies(t *testing.T) {
 				if mode == "trailing_json" {
 					body += `{}`
 				}
+				if mode == "case_alias" {
+					body = `{"EMAIL":"target@example.test","password":"wrong"}`
+				}
+				if mode == "mixed_case_fields" {
+					body = fmt.Sprintf(`{"email":"other%d@example.test","EMAIL":"target@example.test","password":"wrong"}`, i)
+				}
+				if mode == "duplicate_with_null" {
+					body = `{"email":"target@example.test","email":null,"password":"wrong"}`
+				}
+				if mode == "duplicate_field" {
+					body = `{"email":"target@example.test","email":"target@example.test","password":"wrong"}`
+				}
 				req := httptest.NewRequest("POST", "/login", strings.NewReader(body))
 				req.Header.Set("Content-Type", "application/json")
 				req.RemoteAddr = fmt.Sprintf("203.0.113.%d:1234", i)
@@ -50,7 +62,7 @@ func TestAccountRateLimitRejectsUnparseableAndOversizedBodies(t *testing.T) {
 			if mode == "padded" {
 				wantStatus, wantHandled = 413, 0
 			}
-			if mode == "trailing_json" {
+			if mode != "normal" && mode != "padded" {
 				wantStatus, wantHandled = 400, 0
 			}
 			if last != wantStatus || handled != wantHandled {

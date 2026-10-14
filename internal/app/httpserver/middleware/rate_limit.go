@@ -340,7 +340,7 @@ func KeyByIPAndJSONField(field string) RateLimitKeyFunc {
 }
 
 // maxRateLimitJSONBodyBytes 限流取 key 时最多读取的请求体大小；登录类请求体远小于此，
-// 超出时不解析（按 IP 计数），避免在限流之前就为超大请求体分配内存。
+// 超出时拒绝请求，避免在限流之前就为超大请求体分配内存。
 const maxRateLimitJSONBodyBytes = 64 << 10
 
 func readJSONField(c *gin.Context, field string) string {
@@ -361,19 +361,54 @@ func readJSONField(c *gin.Context, field string) string {
 	if len(body) == 0 {
 		return ""
 	}
-	var payload map[string]interface{}
-	if err := json.Unmarshal(body, &payload); err != nil {
+	value, err := rateLimitJSONField(body, field)
+	if err != nil {
 		response.ErrorWithHTTPStatus(c, http.StatusBadRequest, response.CodeBadRequest, i18n.T(i18n.ResolveLocale(c), "error.bad_request"))
 		return ""
 	}
-	value, ok := payload[field]
-	if !ok {
-		return ""
+	return strings.TrimSpace(value)
+}
+
+func rateLimitJSONField(body []byte, field string) (string, error) {
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	token, err := decoder.Token()
+	if err != nil || token != json.Delim('{') {
+		return "", fmt.Errorf("invalid JSON object")
 	}
-	if text, ok := value.(string); ok {
-		return strings.TrimSpace(text)
+	value, seen := "", false
+	for decoder.More() {
+		key, err := decoder.Token()
+		if err != nil {
+			return "", err
+		}
+		var raw json.RawMessage
+		if err := decoder.Decode(&raw); err != nil {
+			return "", err
+		}
+		name, ok := key.(string)
+		if !ok {
+			return "", fmt.Errorf("invalid JSON key")
+		}
+		if strings.EqualFold(name, field) {
+			// typed JSON binding accepts case aliases and preserves a preceding
+			// string when a duplicate is null; reject ambiguous account fields.
+			if name != field || seen {
+				return "", fmt.Errorf("ambiguous JSON account field")
+			}
+			seen = true
+			if err := json.Unmarshal(raw, &value); err != nil {
+				return "", err
+			}
+		}
 	}
-	return ""
+	if token, err := decoder.Token(); err != nil || token != json.Delim('}') {
+		return "", fmt.Errorf("invalid JSON object")
+	}
+	var trailing json.RawMessage
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return "", fmt.Errorf("trailing JSON content")
+	}
+	return value, nil
 }
 
 func toInt64(value interface{}) (int64, bool) {
