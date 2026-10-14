@@ -135,3 +135,15 @@ func TestLocalSecurityStateAllowsOnlyOneConcurrentClaim(t *testing.T) {
 		t.Fatalf("accepted %d concurrent claims", accepted)
 	}
 }
+
+func TestChallengeConsumptionRejectsRedisWriteFailures(t *testing.T) {
+	hook := securityStateRedisFixture(t)
+	hook.failure = true
+	if SetChallengeFlag(context.Background(), "test:"+t.Name(), time.Minute) {
+		t.Fatal("shared-state failure must not allow login")
+	}
+	hook.failure = false
+	if SetChallengeFlag(context.Background(), "test:"+t.Name(), time.Minute) {
+		t.Fatal("locally consumed challenge must not be accepted again")
+	}
+}

@@ -173,8 +173,8 @@ func (admin2FAChallengeStoreAdapter) BumpFails(ctx context.Context, jti string) 
 	return cache.IncrChallengeCounter(ctx, adminchallenge.FailureKey(jti), adminchallenge.TTL)
 }
 
-func (admin2FAChallengeStoreAdapter) Revoke(ctx context.Context, jti string) {
-	cache.SetChallengeFlag(ctx, adminchallenge.RevocationKey(jti), adminchallenge.TTL)
+func (admin2FAChallengeStoreAdapter) Revoke(ctx context.Context, jti string) bool {
+	return cache.SetChallengeFlag(ctx, adminchallenge.RevocationKey(jti), adminchallenge.TTL)
 }
 
 type adminLoginRecorderAdapter struct {

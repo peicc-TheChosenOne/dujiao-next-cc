@@ -70,7 +70,7 @@ type AuthLoginResult struct {
 type ChallengeStore interface {
 	IsRevoked(ctx context.Context, jti string) bool
 	BumpFails(ctx context.Context, jti string) int64
-	Revoke(ctx context.Context, jti string)
+	Revoke(ctx context.Context, jti string) bool
 }
 
 // AdminLoginRecorder 记录管理员登录审计日志。
@@ -345,8 +345,9 @@ func (h *Admin2FAHandler) Verify2FA(c *gin.Context) {
 		}
 		return
 	}
-	if h.challenges != nil {
-		h.challenges.Revoke(ctx, claims.JTI)
+	if h.challenges == nil || !h.challenges.Revoke(ctx, claims.JTI) {
+		ginutil.RespondError(c, response.CodeUnauthorized, "error.totp_challenge_invalid", nil)
+		return
 	}
 	loginRes, err := h.auth.CompleteLoginAfter2FA(claims.AdminID)
 	if err != nil {

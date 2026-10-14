@@ -41,12 +41,16 @@ func IncrChallengeCounter(ctx context.Context, key string, ttl time.Duration) in
 	return incrLocalState(key, ttl, time.Now())
 }
 
-// SetChallengeFlag 写入带过期时间的标记。
-func SetChallengeFlag(ctx context.Context, key string, ttl time.Duration) {
-	setLocalState(key, ttl, time.Now())
-	if rdb := Client(); rdb != nil {
-		_ = rdb.Set(ctx, key, "1", ttl).Err()
+// SetChallengeFlag 原子消费挑战；Redis 写入失败或挑战已消费时返回 false。
+func SetChallengeFlag(ctx context.Context, key string, ttl time.Duration) bool {
+	if !claimLocalState(key, ttl, time.Now()) {
+		return false
 	}
+	if rdb := Client(); rdb != nil {
+		claimed, err := rdb.SetNX(ctx, key, "1", ttl).Result()
+		return err == nil && claimed
+	}
+	return true
 }
 
 // HasChallengeFlag 判断标记是否存在；Redis 故障期间写入进程内存的标记同样生效。

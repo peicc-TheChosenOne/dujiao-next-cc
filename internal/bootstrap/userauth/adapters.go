@@ -587,8 +587,8 @@ func (user2FAChallengeStoreAdapter) BumpFails(ctx context.Context, jti string) i
 	return cache.IncrChallengeCounter(ctx, challenge.FailureKey(jti), challenge.TTL)
 }
 
-func (user2FAChallengeStoreAdapter) Revoke(ctx context.Context, jti string) {
-	cache.SetChallengeFlag(ctx, challenge.RevocationKey(jti), challenge.TTL)
+func (user2FAChallengeStoreAdapter) Revoke(ctx context.Context, jti string) bool {
+	return cache.SetChallengeFlag(ctx, challenge.RevocationKey(jti), challenge.TTL)
 }
 
 func mapUserAuthTransportError(err error) error {

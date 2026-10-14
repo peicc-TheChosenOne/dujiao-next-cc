@@ -61,7 +61,7 @@ type UserChallengeClaims struct {
 type User2FAChallengeStore interface {
 	IsRevoked(ctx context.Context, jti string) bool
 	BumpFails(ctx context.Context, jti string) int64
-	Revoke(ctx context.Context, jti string)
+	Revoke(ctx context.Context, jti string) bool
 }
 
 // User2FATOTPService 是 2FA 绑定管理端口。
@@ -326,8 +326,9 @@ func (h *User2FAHandler) VerifyUser2FA(c *gin.Context) {
 		}
 		return
 	}
-	if h.challenges != nil {
-		h.challenges.Revoke(ctx, claims.JTI)
+	if h.challenges == nil || !h.challenges.Revoke(ctx, claims.JTI) {
+		ginutil.RespondError(c, response.CodeUnauthorized, "error.totp_challenge_invalid", nil)
+		return
 	}
 	loginRes, err := h.auth.CompleteLoginAfter2FA(claims.UserID, claims.RememberMe)
 	if err != nil {
