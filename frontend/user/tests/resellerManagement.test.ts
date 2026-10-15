@@ -4,8 +4,37 @@ import {
   getResellerDomainStatusKey,
   getResellerManagementState,
   getResellerProfileStatusKey,
+  groupResellerDomains,
   isResellerProfileActive,
 } from '../src/utils/resellerManagement.ts'
+import type { ResellerDomainData } from '../src/api/types'
+
+const domain = (id: number, name: string, overrides: Partial<ResellerDomainData> = {}): ResellerDomainData => ({
+  id, domain: name, type: 'custom', status: 'active', verification_status: 'verified', is_primary: false,
+  created_at: '', updated_at: '', ...overrides,
+})
+
+test('domain groups keep root and www together without losing individual states', () => {
+  const www = domain(2, 'www.shop.example.com', { root_domain: 'shop.example.com', status: 'provisioning', provisioning_error: 'validation_failed' })
+  const root = domain(1, 'shop.example.com', { root_domain: 'shop.example.com', is_primary: true })
+  const independent = domain(3, 'other.example.com', { status: 'disabled' })
+  const rows = [www, independent, root]
+  const groups = groupResellerDomains(rows)
+  assert.deepEqual(groups.map(group => [group.rootDomain, group.domains.map(row => row.id)]), [
+    ['shop.example.com', [1, 2]], ['other.example.com', [3]],
+  ])
+  assert.equal(groups[0]?.domains[1]?.provisioning_error, 'validation_failed')
+  assert.equal(groups[1]?.domains[0]?.status, 'disabled')
+  assert.deepEqual(rows, [www, independent, root])
+})
+
+test('legacy www records group with their base domain and missing companions remain visible', () => {
+  const rows = [domain(1, 'www.example.com'), domain(2, 'example.com'), domain(3, 'www.solo.example.com')]
+  assert.deepEqual(groupResellerDomains(rows).map(group => [group.rootDomain, group.domains.map(row => row.id)]), [
+    ['example.com', [2, 1]], ['solo.example.com', [3]],
+  ])
+  assert.deepEqual(groupResellerDomains([]), [])
+})
 
 test('user reseller profile status keys map backend values', () => {
   assert.equal(getResellerProfileStatusKey('pending_review'), 'pendingReview')
