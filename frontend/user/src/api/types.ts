@@ -390,6 +390,7 @@ export interface ResellerProductImagesData {
     image_source: 'platform' | 'custom'
     custom_detail_image: string
     detail_image_source: 'platform' | 'custom'
+    platform_detail_content: Record<string, string> | null
     revision: number
     operation_id: string
 }

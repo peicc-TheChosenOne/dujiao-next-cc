@@ -25,6 +25,7 @@ const state = (operationId: string, revision: number): ResellerProductImagesData
   product: { id: 1, title: { 'en-US': 'Product' }, slug: 'product' },
   platform_images: ['platform'], custom_images: ['own'], effective_images: ['own'], image_source: 'custom',
   custom_detail_image: '', detail_image_source: 'platform',
+  platform_detail_content: {},
   revision, operation_id: operationId,
 })
 

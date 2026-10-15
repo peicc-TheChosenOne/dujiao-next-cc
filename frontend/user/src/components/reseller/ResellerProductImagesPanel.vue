@@ -10,6 +10,7 @@ import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { useLocalized } from '../../composables/useProduct'
 import { getImageUrl } from '../../utils/image'
+import { processHtmlForDisplay } from '../../utils/content'
 import { normalizeResellerProductSettingsPagination } from '../../utils/resellerProductSettings'
 import { PRODUCT_IMAGE_MAX_COUNT, moveProductImage, saveProductImagesWithRecovery, validateProductImage } from '../../utils/resellerProductImages'
 
@@ -184,63 +185,67 @@ onBeforeUnmount(() => { window.removeEventListener('beforeunload', beforeUnload)
     </form>
     <p v-if="error" role="alert" class="text-sm text-destructive">{{ error }}</p>
     <p v-if="loading" role="status" class="text-sm text-muted-foreground">{{ t('resellerProductImages.loading') }}</p>
-    <Card v-if="rows.length" class="overflow-hidden divide-y">
-      <article v-for="row in rows" :key="row.product.id" class="p-4 sm:p-5" :data-product-id="row.product.id">
-        <div class="flex flex-wrap items-start justify-between gap-3">
-          <div class="min-w-0 flex-1">
-            <h3 class="break-words text-sm font-semibold">{{ getLocalizedText(row.product.title) }}</h3>
-            <div class="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-              <span class="rounded-full bg-muted px-2 py-1">{{ t(`resellerProductImages.${row.image_source}`) }}</span>
-              <span v-if="row.image_source === 'custom'">{{ row.custom_images.length }} / {{ PRODUCT_IMAGE_MAX_COUNT }}</span>
-              <span v-else>{{ t('resellerProductImages.followPlatform') }}</span>
-            </div>
-          </div>
-          <div class="flex flex-wrap gap-2">
-            <Button v-if="row.image_source === 'custom'" size="sm" variant="outline" :disabled="disabled(row)" @click="update(row, [])">{{ t('resellerProductImages.restore') }}</Button>
-            <Button size="sm" :disabled="disabled(row) || row.custom_images.length >= PRODUCT_IMAGE_MAX_COUNT" @click="inputs.get(row.product.id)?.click()"><ImagePlus class="mr-1 h-4 w-4" />{{ t('resellerProductImages.upload') }}</Button>
-            <input :ref="el => { if (el) inputs.set(row.product.id, el as HTMLInputElement) }" type="file" class="hidden" accept="image/png,image/jpeg,image/gif,image/webp" multiple :aria-label="t('resellerProductImages.upload')" :disabled="disabled(row)" @change="upload(row, $event)" />
-          </div>
+    <div v-if="rows.length" class="space-y-6">
+      <Card v-for="row in rows" :key="row.product.id" class="overflow-hidden" :data-product-id="row.product.id">
+        <div class="border-b bg-muted/40 px-4 py-4 sm:px-5">
+          <h3 class="break-words text-base font-bold">{{ getLocalizedText(row.product.title) }}</h3>
         </div>
-        <div class="mt-4 flex flex-wrap gap-3">
-          <div v-for="(image, index) in row.effective_images" :key="image" class="w-28 sm:w-32">
-            <div class="relative aspect-square overflow-hidden rounded-lg border bg-muted">
-              <img :src="getImageUrl(image)" :alt="t('resellerProductImages.imageAlt', { index: index + 1 })" class="h-full w-full object-cover" loading="lazy" />
-              <span v-if="index === 0" class="absolute left-1 top-1 rounded bg-background/90 px-2 py-0.5 text-xs font-medium">{{ t('resellerProductImages.cover') }}</span>
+        <div class="grid items-start gap-4 p-4 sm:p-5 xl:grid-cols-2">
+          <section class="min-w-0 rounded-lg border bg-background p-4" data-testid="product-gallery-images">
+            <div class="flex flex-wrap items-center gap-2">
+              <h4 class="text-sm font-semibold">{{ t('resellerProductImages.galleryTitle') }}</h4>
+              <span class="rounded-full bg-muted px-2 py-1 text-xs text-muted-foreground">{{ t(`resellerProductImages.${row.image_source}`) }}</span>
+              <span v-if="row.image_source === 'custom'" class="text-xs text-muted-foreground">{{ row.custom_images.length }} / {{ PRODUCT_IMAGE_MAX_COUNT }}</span>
             </div>
-            <div v-if="row.image_source === 'custom'" class="mt-2 flex justify-between gap-1">
-              <Button size="icon" variant="ghost" class="h-7 w-7" :title="t('resellerProductImages.previous')" :aria-label="t('resellerProductImages.previous')" :disabled="disabled(row) || index === 0" @click="update(row, moveProductImage(row.custom_images, index, index - 1))"><ArrowLeft class="h-3.5 w-3.5" /></Button>
-              <Button size="icon" variant="ghost" class="h-7 w-7" :title="t('resellerProductImages.next')" :aria-label="t('resellerProductImages.next')" :disabled="disabled(row) || index === row.custom_images.length - 1" @click="update(row, moveProductImage(row.custom_images, index, index + 1))"><ArrowRight class="h-3.5 w-3.5" /></Button>
-              <Button size="icon" variant="ghost" class="h-7 w-7" :title="t('resellerProductImages.setCover')" :aria-label="t('resellerProductImages.setCover')" :disabled="disabled(row) || index === 0" @click="update(row, moveProductImage(row.custom_images, index, 0))"><Star class="h-3.5 w-3.5" /></Button>
-              <Button size="icon" variant="ghost" class="h-7 w-7 text-destructive" :title="t('resellerProductImages.delete')" :aria-label="t('resellerProductImages.delete')" :disabled="disabled(row)" @click="update(row, row.custom_images.filter((_, position) => position !== index))"><Trash2 class="h-3.5 w-3.5" /></Button>
+            <p class="mt-2 text-xs text-muted-foreground">{{ t('resellerProductImages.galleryDescription') }}</p>
+            <div class="mt-3 flex flex-wrap gap-2">
+              <Button v-if="row.image_source === 'custom'" size="sm" variant="outline" :disabled="disabled(row)" @click="update(row, [])">{{ t('resellerProductImages.restore') }}</Button>
+              <Button size="sm" :disabled="disabled(row) || row.custom_images.length >= PRODUCT_IMAGE_MAX_COUNT" @click="inputs.get(row.product.id)?.click()"><ImagePlus class="mr-1 h-4 w-4" />{{ t('resellerProductImages.upload') }}</Button>
+              <input :ref="el => { if (el) inputs.set(row.product.id, el as HTMLInputElement) }" type="file" class="hidden" accept="image/png,image/jpeg,image/gif,image/webp" multiple :aria-label="t('resellerProductImages.upload')" :disabled="disabled(row)" @change="upload(row, $event)" />
             </div>
-          </div>
-          <div v-if="!row.effective_images.length" class="flex h-28 w-28 items-center justify-center rounded-lg border border-dashed text-xs text-muted-foreground">{{ t('resellerProductImages.noImages') }}</div>
-        </div>
-        <p class="mt-3 text-xs text-muted-foreground">{{ t('resellerProductImages.limits') }}</p>
-        <section class="mt-4 border-t pt-4" data-testid="product-detail-image">
-          <div class="flex flex-wrap items-start justify-between gap-3">
-            <div class="min-w-0 flex-1">
+            <div class="mt-4 flex flex-wrap gap-3">
+              <div v-for="(image, index) in row.effective_images" :key="image" class="w-28 sm:w-32">
+                <div class="relative aspect-square overflow-hidden rounded-lg border bg-muted">
+                  <img :src="getImageUrl(image)" :alt="t('resellerProductImages.imageAlt', { index: index + 1 })" class="h-full w-full object-cover" loading="lazy" />
+                  <span v-if="index === 0" class="absolute left-1 top-1 rounded bg-background/90 px-2 py-0.5 text-xs font-medium">{{ t('resellerProductImages.cover') }}</span>
+                </div>
+                <div v-if="row.image_source === 'custom'" class="mt-2 flex justify-between gap-1">
+                  <Button size="icon" variant="ghost" class="h-7 w-7" :title="t('resellerProductImages.previous')" :aria-label="t('resellerProductImages.previous')" :disabled="disabled(row) || index === 0" @click="update(row, moveProductImage(row.custom_images, index, index - 1))"><ArrowLeft class="h-3.5 w-3.5" /></Button>
+                  <Button size="icon" variant="ghost" class="h-7 w-7" :title="t('resellerProductImages.next')" :aria-label="t('resellerProductImages.next')" :disabled="disabled(row) || index === row.custom_images.length - 1" @click="update(row, moveProductImage(row.custom_images, index, index + 1))"><ArrowRight class="h-3.5 w-3.5" /></Button>
+                  <Button size="icon" variant="ghost" class="h-7 w-7" :title="t('resellerProductImages.setCover')" :aria-label="t('resellerProductImages.setCover')" :disabled="disabled(row) || index === 0" @click="update(row, moveProductImage(row.custom_images, index, 0))"><Star class="h-3.5 w-3.5" /></Button>
+                  <Button size="icon" variant="ghost" class="h-7 w-7 text-destructive" :title="t('resellerProductImages.delete')" :aria-label="t('resellerProductImages.delete')" :disabled="disabled(row)" @click="update(row, row.custom_images.filter((_, position) => position !== index))"><Trash2 class="h-3.5 w-3.5" /></Button>
+                </div>
+              </div>
+              <div v-if="!row.effective_images.length" class="flex h-28 w-28 items-center justify-center rounded-lg border border-dashed text-xs text-muted-foreground">{{ t('resellerProductImages.noImages') }}</div>
+            </div>
+            <p v-if="row.image_source === 'platform'" class="mt-3 text-xs text-muted-foreground">{{ t('resellerProductImages.followPlatform') }}</p>
+            <p class="mt-3 text-xs text-muted-foreground">{{ t('resellerProductImages.limits') }}</p>
+          </section>
+          <section class="min-w-0 rounded-lg border bg-background p-4" data-testid="product-detail-image">
+            <div class="flex flex-wrap items-center gap-2">
               <h4 class="text-sm font-semibold">{{ t('resellerProductImages.detailTitle') }}</h4>
-              <p class="mt-1 text-xs text-muted-foreground">{{ t('resellerProductImages.detailDescription') }}</p>
-              <span class="mt-2 inline-block rounded-full bg-muted px-2 py-1 text-xs text-muted-foreground">{{ t(row.detail_image_source === 'custom' ? 'resellerProductImages.customDetail' : 'resellerProductImages.platformDetail') }}</span>
+              <span class="rounded-full bg-muted px-2 py-1 text-xs text-muted-foreground">{{ t(row.detail_image_source === 'custom' ? 'resellerProductImages.customDetail' : 'resellerProductImages.platformDetail') }}</span>
             </div>
-            <div class="flex flex-wrap gap-2">
+            <p class="mt-2 text-xs text-muted-foreground">{{ t('resellerProductImages.detailDescription') }}</p>
+            <div class="mt-3 flex flex-wrap gap-2">
               <Button v-if="row.custom_detail_image" size="sm" variant="outline" :disabled="disabled(row)" @click="saveDetail(row)">{{ t('resellerProductImages.restoreDetail') }}</Button>
               <Button size="sm" :disabled="disabled(row)" @click="detailInputs.get(row.product.id)?.click()"><ImagePlus class="mr-1 h-4 w-4" />{{ t(row.custom_detail_image ? 'resellerProductImages.replaceDetail' : 'resellerProductImages.uploadDetail') }}</Button>
               <input :ref="el => { if (el) detailInputs.set(row.product.id, el as HTMLInputElement) }" type="file" class="hidden" accept="image/png,image/jpeg,image/gif,image/webp" :aria-label="t('resellerProductImages.uploadDetail')" :disabled="disabled(row)" @change="uploadDetail(row, $event)" />
             </div>
-          </div>
-          <img v-if="row.custom_detail_image" :src="getImageUrl(row.custom_detail_image)" :alt="t('resellerProductImages.detailAlt')" class="mt-3 max-h-64 max-w-full rounded-lg border object-contain object-left" loading="lazy" />
-          <p v-else class="mt-3 text-xs text-muted-foreground">{{ t('resellerProductImages.followPlatformDetail') }}</p>
-          <p class="mt-3 text-xs text-muted-foreground">{{ t('resellerProductImages.detailLimits') }}</p>
-        </section>
-        <div class="mt-2 flex items-center gap-2 text-xs" :class="status(row.product.id).failed ? 'text-destructive' : 'text-success'" role="status" aria-live="polite">
+            <img v-if="row.custom_detail_image" :src="getImageUrl(row.custom_detail_image)" :alt="t('resellerProductImages.detailAlt')" class="mt-4 max-h-80 max-w-full rounded-lg border object-contain object-left" loading="lazy" />
+            <div v-else-if="getLocalizedText(row.platform_detail_content)" class="prose prose-sm mt-4 max-h-80 max-w-none overflow-y-auto rounded-lg border p-3 dark:prose-invert [&_img]:max-h-80 [&_img]:max-w-full [&_img]:object-contain" v-html="processHtmlForDisplay(getLocalizedText(row.platform_detail_content))" />
+            <p v-else class="mt-4 rounded-lg border border-dashed p-4 text-xs text-muted-foreground">{{ t('resellerProductImages.noPlatformDetail') }}</p>
+            <p v-if="!row.custom_detail_image" class="mt-3 text-xs text-muted-foreground">{{ t('resellerProductImages.followPlatformDetail') }}</p>
+            <p class="mt-3 text-xs text-muted-foreground">{{ t('resellerProductImages.detailLimits') }}</p>
+          </section>
+        </div>
+        <div class="flex items-center gap-2 border-t bg-muted/20 px-4 py-3 text-xs sm:px-5" :class="status(row.product.id).failed ? 'text-destructive' : 'text-success'" role="status" aria-live="polite">
           <LoaderCircle v-if="status(row.product.id).busy" class="h-4 w-4 animate-spin" />
           <span>{{ status(row.product.id).message }}</span>
           <Button v-if="status(row.product.id).needsRefresh" size="sm" variant="outline" :disabled="status(row.product.id).busy" @click="refreshRow(row)">{{ t('resellerProductImages.refresh') }}</Button>
         </div>
-      </article>
-    </Card>
+      </Card>
+    </div>
     <p v-else-if="!loading && !error" class="py-8 text-center text-sm text-muted-foreground">{{ t('resellerProductImages.empty') }}</p>
     <div v-if="pagination.total_page > 1" class="flex items-center justify-center gap-3">
       <Button variant="outline" size="sm" :disabled="saving || loading || pagination.page <= 1" @click="load(pagination.page - 1)">{{ t('orders.prevPage') }}</Button>

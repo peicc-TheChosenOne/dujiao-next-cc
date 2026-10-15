@@ -18,20 +18,22 @@ type ResellerProductImagesResp struct {
 		Title jsonmap.JSON `json:"title"`
 		Slug  string       `json:"slug"`
 	} `json:"product"`
-	PlatformImages    []string `json:"platform_images"`
-	CustomImages      []string `json:"custom_images"`
-	EffectiveImages   []string `json:"effective_images"`
-	ImageSource       string   `json:"image_source"`
-	CustomDetailImage string   `json:"custom_detail_image"`
-	DetailImageSource string   `json:"detail_image_source"`
-	Revision          uint64   `json:"revision"`
-	OperationID       string   `json:"operation_id"`
+	PlatformImages        []string     `json:"platform_images"`
+	CustomImages          []string     `json:"custom_images"`
+	EffectiveImages       []string     `json:"effective_images"`
+	ImageSource           string       `json:"image_source"`
+	CustomDetailImage     string       `json:"custom_detail_image"`
+	DetailImageSource     string       `json:"detail_image_source"`
+	PlatformDetailContent jsonmap.JSON `json:"platform_detail_content"`
+	Revision              uint64       `json:"revision"`
+	OperationID           string       `json:"operation_id"`
 }
 
 func NewResellerProductImagesResp(product productdomain.Product, config resellerdomain.ProductImages) ResellerProductImagesResp {
 	resp := ResellerProductImagesResp{PlatformImages: append([]string{}, product.Images...), CustomImages: append([]string{}, config.Images...), Revision: config.Revision, OperationID: config.OperationID, ImageSource: "platform"}
 	resp.Product.ID, resp.Product.Title, resp.Product.Slug = product.ID, product.TitleJSON, product.Slug
 	resp.CustomDetailImage = config.DetailImage
+	resp.PlatformDetailContent = product.ContentJSON
 	resp.DetailImageSource = "platform"
 	if config.DetailImage != "" {
 		resp.DetailImageSource = "custom"

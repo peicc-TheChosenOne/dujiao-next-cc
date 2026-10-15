@@ -1848,6 +1848,9 @@
     "changed": "商品报价已更新，请重新确认价格后提交"
   },
   "resellerProductImages": {
+    "galleryTitle": "商品图",
+    "galleryDescription": "用于商品列表封面和详情页轮播，第一张为封面。",
+    "noPlatformDetail": "平台暂无详情内容，可上传本店详情图。",
     "description": "可自定义本店商品主图和单张详情图。自定义详情图替换平台详情正文；名称、简介、规格、库存及交付由总店维护。操作后自动保存。",
     "search": "搜索商品",
     "searchButton": "搜索",

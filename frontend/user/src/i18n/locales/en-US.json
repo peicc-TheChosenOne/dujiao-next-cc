@@ -1848,6 +1848,9 @@
     "changed": "Product pricing changed. Review the updated price and confirm again."
   },
   "resellerProductImages": {
+    "galleryTitle": "Product images",
+    "galleryDescription": "Used for the listing cover and product gallery. The first image is the cover.",
+    "noPlatformDetail": "The platform has no detail content. You can upload a store detail image.",
     "description": "Customize your product gallery and one detail image. A custom detail image replaces the platform detail body. The platform maintains names, descriptions, specifications, stock and fulfillment. Changes save automatically.",
     "search": "Search products",
     "searchButton": "Search",
