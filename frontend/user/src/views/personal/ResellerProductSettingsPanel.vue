@@ -36,6 +36,36 @@ const resolving = ref(false)
 let resolveNavigation: ((choice: string) => void) | undefined
 const prefix = 'supplyPricing.'
 const text = (key: string) => t(prefix + key)
+const pricingColumns = reactive([
+  { key: 'product', width: 300, minimum: 180 },
+  { key: 'supply', width: 140, minimum: 110 },
+  { key: 'retail', width: 200, minimum: 160 },
+  { key: 'profit', width: 140, minimum: 110 },
+  { key: 'listing', width: 150, minimum: 140 },
+  { key: 'action', width: 150, minimum: 140 },
+])
+const pricingTableStyle = computed(() => ({
+  '--pricing-columns': pricingColumns.map(column => `${column.width}px`).join(' '),
+  '--pricing-width': `${pricingColumns.reduce((total, column) => total + column.width, 0)}px`,
+}))
+const maximumColumnWidth = 2000
+let columnResize: { index: number; pointerID: number; startX: number; startWidth: number } | undefined
+const adjustColumn = (index: number, width: number) => {
+  const column = pricingColumns[index]
+  if (column) column.width = Math.min(maximumColumnWidth, Math.max(column.minimum, Math.round(width)))
+}
+const startColumnResize = (event: PointerEvent, index: number) => {
+  const column = pricingColumns[index]
+  if (!column || event.button !== 0) return
+  const handle = event.currentTarget as HTMLElement
+  handle.setPointerCapture(event.pointerId)
+  columnResize = { index, pointerID: event.pointerId, startX: event.clientX, startWidth: column.width }
+}
+const moveColumnResize = (event: PointerEvent) => {
+  if (columnResize?.pointerID !== event.pointerId) return
+  adjustColumn(columnResize.index, columnResize.startWidth + event.clientX - columnResize.startX)
+}
+const endColumnResize = () => { columnResize = undefined }
 const seed = (sku: ResellerProductSettingSKUData) => {
   const { price, listed } = getInitialRetailDraft(sku)
   drafts[sku.id] = { price, listed, initialPrice: price, initialListed: listed, revision: sku.pricing_revision, saving: false, message: '', failed: false }
@@ -149,13 +179,32 @@ onBeforeUnmount(() => { window.removeEventListener('beforeunload', beforeUnload)
     </div>
     <p v-if="loading" class="p-6 text-muted-foreground">{{ text('loading') }}</p>
     <p v-else-if="!flatRows.length" class="p-6 text-muted-foreground">{{ t('personalCenter.reseller.productSettings.empty') }}</p>
-    <div v-else class="overflow-hidden rounded-xl border">
-      <div class="hidden grid-cols-[minmax(0,2.5fr)_minmax(100px,1fr)_minmax(140px,1.25fr)_minmax(100px,1fr)_96px_56px] gap-4 border-b bg-muted/30 px-4 py-3 text-xs text-muted-foreground lg:grid">
-        <span>{{ text('product') }}</span><span>{{ text('supply') }}</span><span>{{ text('retail') }}</span><span>{{ text('profit') }}</span><span>{{ text('listing') }}</span><span>{{ text('action') }}</span>
+    <div v-else class="overflow-x-auto rounded-xl border" :style="pricingTableStyle">
+      <div class="pricing-grid hidden border-b bg-muted/30 text-xs text-muted-foreground lg:grid">
+        <div v-for="(column, index) in pricingColumns" :key="column.key" class="relative min-w-0 border-r px-4 py-3 last:border-r-0">
+          {{ text(column.key) }}
+          <button
+            type="button"
+            role="separator"
+            aria-orientation="vertical"
+            :aria-label="t('supplyPricing.resizeColumn', { column: text(column.key) })"
+            :aria-valuenow="column.width"
+            :aria-valuemin="column.minimum"
+            :aria-valuemax="maximumColumnWidth"
+            class="absolute inset-y-0 -right-1.5 z-10 w-3 touch-none cursor-col-resize border-x border-transparent hover:border-primary/50 hover:bg-primary/20 focus-visible:outline-2 focus-visible:outline-primary"
+            @pointerdown.prevent="startColumnResize($event, index)"
+            @pointermove="moveColumnResize"
+            @pointerup="endColumnResize"
+            @pointercancel="endColumnResize"
+            @lostpointercapture="endColumnResize"
+            @keydown.left.prevent="adjustColumn(index, column.width - 16)"
+            @keydown.right.prevent="adjustColumn(index, column.width + 16)"
+          />
+        </div>
       </div>
-      <div v-for="{ product, sku } in flatRows" :key="sku.id" class="grid gap-4 border-b px-4 py-4 last:border-b-0 lg:grid-cols-[minmax(0,2.5fr)_minmax(100px,1fr)_minmax(140px,1.25fr)_minmax(100px,1fr)_96px_56px] lg:items-center">
+      <div v-for="{ product, sku } in flatRows" :key="sku.id" class="pricing-grid pricing-row grid gap-4 border-b p-4 last:border-b-0 lg:gap-0 lg:p-0">
         <div class="min-w-0">
-          <p class="break-words text-sm font-semibold leading-5" :title="getLocalizedText(product.product.title)">{{ getLocalizedText(product.product.title) }}</p>
+          <p class="truncate text-sm font-semibold leading-5" :title="getLocalizedText(product.product.title)">{{ getLocalizedText(product.product.title) }}</p>
           <p class="mt-1 break-words text-xs text-muted-foreground">{{ specLabel(product, sku) }}</p>
           <Button v-if="product.product_setting?.is_listed === false" variant="link" size="sm" class="h-auto p-0 text-xs" @click="restoreProduct(product)">{{ text('restoreProduct') }}</Button>
         </div>
@@ -167,8 +216,11 @@ onBeforeUnmount(() => { window.removeEventListener('beforeunload', beforeUnload)
           <p v-if="!hasSavedRetailPrice(sku) && !quoteBlocked(sku)" class="mt-1 text-xs text-muted-foreground">{{ text('initialPriceHint') }}</p>
         </div>
         <div class="font-mono text-sm font-semibold" :class="priceError(sku) ? 'text-destructive' : 'text-success'"><span class="mr-2 text-xs font-normal text-muted-foreground lg:hidden">{{ text('profit') }}</span>{{ profit(sku) }}</div>
-        <div><div class="flex items-center gap-2"><Switch v-model="draftFor(sku.id).listed" :disabled="draftFor(sku.id).saving || (!draftFor(sku.id).listed && (quoteBlocked(sku) || !sku.is_active))" :aria-label="text('listing')" /><span class="text-xs text-muted-foreground">{{ status(product, sku) }}</span></div></div>
-        <div><Button size="sm" :disabled="draftFor(sku.id).saving || (!dirty(draftFor(sku.id)) && (hasSavedRetailPrice(sku) || quoteBlocked(sku))) || (draftFor(sku.id).listed && !!priceError(sku))" @click="saveRow(product, sku)">{{ text(draftFor(sku.id).saving ? 'saving' : 'save') }}</Button><p v-if="draftFor(sku.id).message" class="mt-1 text-xs" :class="draftFor(sku.id).failed ? 'text-destructive' : 'text-success'" role="status">{{ draftFor(sku.id).message }}</p></div>
+        <div>
+          <div class="flex items-center gap-2"><Switch v-model="draftFor(sku.id).listed" :disabled="draftFor(sku.id).saving || (!draftFor(sku.id).listed && (quoteBlocked(sku) || !sku.is_active))" :aria-label="text('listing')" :aria-describedby="`listing-save-hint-${sku.id}`" /><span class="text-xs text-muted-foreground">{{ status(product, sku) }}</span></div>
+          <p :id="`listing-save-hint-${sku.id}`" class="mt-1 text-xs text-muted-foreground">{{ text('listingSaveHint') }}</p>
+        </div>
+        <div><Button size="sm" :disabled="draftFor(sku.id).saving || (!dirty(draftFor(sku.id)) && (hasSavedRetailPrice(sku) || quoteBlocked(sku))) || (draftFor(sku.id).listed && !!priceError(sku))" @click="saveRow(product, sku)">{{ text(draftFor(sku.id).saving ? 'saving' : 'save') }}</Button><p v-if="draftFor(sku.id).message && (draftFor(sku.id).failed || !dirty(draftFor(sku.id)))" class="mt-1 text-xs" :class="draftFor(sku.id).failed ? 'text-destructive' : 'text-success'" role="status">{{ draftFor(sku.id).message }}</p></div>
       </div>
     </div>
     <div v-if="pagination.total_page > 1" class="mt-5 flex items-center justify-center gap-3">
@@ -184,3 +236,25 @@ onBeforeUnmount(() => { window.removeEventListener('beforeunload', beforeUnload)
     </DialogRoot>
   </Card>
 </template>
+
+<style scoped>
+@media (min-width: 1024px) {
+  .pricing-grid {
+    grid-template-columns: var(--pricing-columns);
+    width: var(--pricing-width);
+  }
+
+  .pricing-row > div {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    justify-content: center;
+    border-right: 1px solid var(--ui-border);
+    padding: 1rem;
+  }
+
+  .pricing-row > div:last-child {
+    border-right: 0;
+  }
+}
+</style>
