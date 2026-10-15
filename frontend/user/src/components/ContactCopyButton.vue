@@ -44,7 +44,7 @@ onUnmounted(() => {
       :aria-label="`${label}: ${value}`"
       :title="copied ? t('footer.copySuccess') : t('footer.copyContact', { name: label })"
       class="group grid w-full min-w-0 grid-cols-[20px_minmax(0,1fr)_16px] items-center gap-x-3 text-left text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 motion-reduce:transition-none"
-      :class="card ? 'rounded-lg border border-gray-100 bg-gray-50 p-3 hover:border-gray-200 hover:bg-gray-100 dark:border-white/5 dark:bg-white/5 dark:hover:border-white/10 dark:hover:bg-white/10' : 'rounded-sm py-1.5'"
+      :class="card ? 'rounded-lg bg-transparent p-3 hover:bg-muted/50' : 'rounded-sm py-1.5'"
       @click="handleCopy"
     >
       <svg v-if="kind === 'wechat'" viewBox="0 0 24 24" fill="currentColor" class="h-5 w-5 text-[#07c160]" aria-hidden="true">
