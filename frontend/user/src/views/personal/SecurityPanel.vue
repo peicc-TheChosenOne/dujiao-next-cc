@@ -92,7 +92,7 @@
       @submit="handleChangePassword"
     />
 
-    <TwoFactorSection v-if="canManagePassword" />
+    <TwoFactorSection :allow-self-setup="canManagePassword" />
   </div>
 </template>
 

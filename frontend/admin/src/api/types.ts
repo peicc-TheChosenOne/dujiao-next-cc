@@ -27,6 +27,8 @@ export interface AdminCategory {
 
 // --- Product ---
 export interface AdminProductSKU {
+    supply_price_amount?: string | null
+    min_sale_price_amount?: string | null
   id: number
   product_id: number
   sku_code: string
@@ -717,38 +719,6 @@ export interface AdminDashboardInventoryAlert {
   available_stock: number
 }
 
-// --- Ad Proxy ---
-export interface AdRenderSlotDTO {
-  code: string
-  scene: string
-  layout: string
-  render_mode: string
-  max_items: number
-}
-
-export interface AdRenderItemDTO {
-  id: number
-  advertiser_name: string
-  title: string
-  subtitle: string
-  cta_label: string
-  badge: string
-  image: string
-  mobile_image: string
-  icon: string
-  link_type: string
-  open_in_new_tab: boolean
-  theme: string
-  dismissible: boolean
-  click_url: string
-  impression_token: string
-}
-
-export interface AdRenderResponse {
-  slot: AdRenderSlotDTO
-  items: AdRenderItemDTO[]
-}
-
 // --- Affiliate ---
 export interface AdminAffiliateUser {
   id: number
@@ -823,6 +793,7 @@ export interface AdminResellerProfileRef {
 }
 
 export interface AdminResellerProfile {
+  login_security?: { required: boolean; bound: boolean; binding_state: 'bound' | 'unbound' | 'reset_pending'; bound_at?: string; action: string; reason: string; admin_id: number; updated_at?: string }
   id: number
   user_id: number
   status: string
@@ -851,6 +822,13 @@ export interface AdminResellerDomain {
   created_at: string
   updated_at: string
   profile?: AdminResellerProfileRef
+  root_domain?: string
+  hostname_status?: string
+  ssl_status?: string
+  provisioning_status?: string
+  provisioning_error?: string
+  last_sync_at?: string
+  dns_records?: { type: string; name: string; value: string }[]
 }
 
 export interface AdminResellerLocalizedText {
@@ -860,10 +838,22 @@ export interface AdminResellerLocalizedText {
   [key: string]: string | undefined
 }
 
+export interface AdminResellerBannerConfig {
+  mode: 'inherit' | 'custom' | 'hidden'
+  image: string
+  mobile_image: string
+  title: AdminResellerLocalizedText
+  subtitle: AdminResellerLocalizedText
+  link_type: 'none' | 'internal' | 'external'
+  link_value: string
+  open_in_new_tab: boolean
+}
+
 export interface AdminResellerSiteConfigPayload {
   site_name?: string
   logo?: string
   favicon?: string
+  banner?: AdminResellerBannerConfig | null
   announcement?: {
     enabled?: boolean
     type?: string
@@ -873,6 +863,8 @@ export interface AdminResellerSiteConfigPayload {
   support?: {
     telegram?: string
     whatsapp?: string
+    wechat?: string
+    qq?: string
     email?: string
     support_url?: string
   }
@@ -902,6 +894,7 @@ export interface AdminResellerSiteConfig extends Required<Pick<AdminResellerSite
   site_name: string
   logo: string
   favicon: string
+  banner?: AdminResellerBannerConfig | null
   footer_links: Array<{
     name?: AdminResellerLocalizedText
     url?: string
@@ -917,6 +910,31 @@ export interface AdminResellerProductSettingProduct {
   title: LocalizedText
   price_amount: string | number
   is_active: boolean
+}
+
+export interface AdminResellerProductImages {
+  product: { id: number; slug: string; title: LocalizedText }
+  reseller_id: number
+  user_id: number
+  owner_label: string
+  profile_status: string
+  can_edit: boolean
+  platform_images: string[]
+  custom_images: string[]
+  effective_images: string[]
+  image_source: 'platform' | 'custom'
+  custom_detail_image: string
+  detail_image_source: 'platform' | 'custom'
+  platform_detail_content: LocalizedText
+  revision: number
+  operation_id: string
+  updated_at: string | null
+}
+
+export interface AdminResellerImageMutation {
+  revision: number
+  operation_id: string
+  images?: string[]
 }
 
 export interface AdminResellerProductSetting {
@@ -952,6 +970,17 @@ export interface AdminResellerProductSettingRule {
 }
 
 export interface AdminResellerProductSettingSKU {
+    supply_price_amount: string | null
+    min_sale_price_amount: string
+    max_sale_price_amount: string | null
+    sale_price_amount: string
+    draft_price_amount: string
+    profit_amount: string
+    price_valid: boolean
+    can_sell: boolean
+    error_code: string
+    pricing_revision: string
+
   id: number
   sku_code: string
   spec_values: Record<string, string>
@@ -968,6 +997,7 @@ export interface AdminResellerProductSettingDetail {
 }
 
 export interface AdminResellerProductSettingPayloadItem {
+  pricing_revision?: string
   sku_id: number
   is_listed: boolean
   pricing_mode: string
@@ -978,7 +1008,7 @@ export interface AdminResellerProductSettingPayloadItem {
 }
 
 export interface AdminResellerProductSettingUpdatePayload {
-  settings: AdminResellerProductSettingPayloadItem[]
+  settings: Array<Pick<AdminResellerProductSettingPayloadItem, "sku_id" | "is_listed"> & Partial<AdminResellerProductSettingPayloadItem>>
 }
 
 export interface AdminResellerProductSettingPreviewItem {
@@ -997,6 +1027,12 @@ export interface AdminResellerProductSettingPreviewData {
 export interface AdminResellerProfileApprovePayload {
   default_markup_percent?: string
   max_markup_percent?: string
+}
+
+export interface AdminResellerProfileApproveResult {
+  profile: AdminResellerProfile
+  system_domain: AdminResellerDomain | null
+  already_approved: boolean
 }
 
 export interface AdminResellerProfileUpdatePayload {

@@ -3,6 +3,7 @@ package integrationtest
 import (
 	"context"
 	"errors"
+	"reflect"
 	"testing"
 
 	resellergormstore "github.com/dujiao-next/internal/modules/reseller/infrastructure/gormstore"
@@ -49,6 +50,9 @@ func TestResellerSiteConfigServiceNormalizesAndStoresSafeFields(t *testing.T) {
 		},
 		Support: ResellerSupportInput{
 			Telegram:   "https://t.me/alice",
+			WhatsApp:   "https://wa.me/1234567890",
+			WeChat:     "  alice_support  ",
+			QQ:         "  987654321  ",
 			Email:      "support@example.test",
 			SupportURL: "mailto:support@example.test",
 		},
@@ -63,8 +67,17 @@ func TestResellerSiteConfigServiceNormalizesAndStoresSafeFields(t *testing.T) {
 	if row.SiteName != "Alice Store" || row.Logo != "/uploads/reseller/logo.png" || row.Favicon != "https://cdn.example.test/favicon.png" {
 		t.Fatalf("unexpected normalized row: %+v", row)
 	}
-	if row.SupportJSON["telegram"] != "https://t.me/alice" || row.SupportJSON["email"] != "support@example.test" {
+	wantSupport := jsonmap.JSON{
+		"telegram": "https://t.me/alice", "whatsapp": "https://wa.me/1234567890",
+		"wechat": "alice_support", "qq": "987654321", "email": "support@example.test",
+		"support_url": "mailto:support@example.test",
+	}
+	if !reflect.DeepEqual(row.SupportJSON, wantSupport) {
 		t.Fatalf("unexpected support json: %+v", row.SupportJSON)
+	}
+	_, loaded, _, err := svc.GetUserSiteConfig(user.ID)
+	if err != nil || loaded == nil || !reflect.DeepEqual(loaded.SupportJSON, wantSupport) {
+		t.Fatalf("contacts did not survive reloading: config=%+v err=%v", loaded, err)
 	}
 	announcementTitle := row.AnnouncementJSON["title"].(jsonmap.JSON)
 	if _, exists := announcementTitle["fr-FR"]; exists {
@@ -125,6 +138,71 @@ func TestNormalizeResellerSupportAcceptsTelegramMe(t *testing.T) {
 	}
 	if support["telegram"] != "https://telegram.me/alice" {
 		t.Fatalf("unexpected support json: %+v", support)
+	}
+}
+
+func TestResellerSiteConfigServiceKeepsContactsSeparateFromMainSite(t *testing.T) {
+	db := openResellerManagementServiceTestDB(t)
+	repo := resellergormstore.New(db)
+	user := seedResellerManagementUser(t, db, "site-config-contacts@example.test")
+	profile := resellerdomain.Profile{UserID: user.ID, Status: resellerdomain.ProfileStatusActive, SettlementStatus: resellerdomain.SettlementStatusNormal}
+	if err := db.Create(&profile).Error; err != nil {
+		t.Fatalf("create profile failed: %v", err)
+	}
+	svc := NewResellerSiteConfigService(repo)
+	tenant := ResellerTenantContext("shop.example.test", profile.ID, user.ID, "shop.example.test")
+	mainContact := map[string]interface{}{
+		"telegram": "https://t.me/main", "whatsapp": "https://wa.me/1234567890",
+		"wechat": "main_support", "qq": "123456789", "email": "main@example.test",
+		"support_url": "https://main.example.test/support",
+	}
+	base := map[string]interface{}{"contact": mainContact}
+	for _, tc := range []struct {
+		name    string
+		support jsonmap.JSON
+		want    map[string]interface{}
+	}{
+		{name: "no saved config", want: map[string]interface{}{}},
+		{
+			name: "all own channels",
+			support: jsonmap.JSON{
+				"telegram": "https://t.me/shop", "whatsapp": "https://wa.me/9876543210",
+				"wechat": "shop_support", "qq": "987654321", "email": "shop@example.test",
+				"support_url": "https://shop.example.test/support",
+			},
+			want: map[string]interface{}{
+				"telegram": "https://t.me/shop", "whatsapp": "https://wa.me/9876543210",
+				"wechat": "shop_support", "qq": "987654321", "email": "shop@example.test",
+				"support_url": "https://shop.example.test/support",
+			},
+		},
+		{name: "only email", support: jsonmap.JSON{"email": "shop@example.test"}, want: map[string]interface{}{"email": "shop@example.test"}},
+		{name: "cleared channels", support: jsonmap.JSON{"telegram": "", "whatsapp": "", "wechat": " ", "qq": "", "email": "", "support_url": ""}, want: map[string]interface{}{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.support != nil {
+				if _, err := repo.UpsertSiteConfig(resellerdomain.SiteConfig{ResellerID: profile.ID, SupportJSON: tc.support}); err != nil {
+					t.Fatalf("save contacts failed: %v", err)
+				}
+			}
+			out, err := svc.ApplyPublicConfigOverlay(context.Background(), tenant, base)
+			if err != nil {
+				t.Fatalf("apply overlay failed: %v", err)
+			}
+			if got := resellerSiteConfigTestMap(out["contact"]); !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("expected own contacts %+v, got %+v", tc.want, got)
+			}
+		})
+	}
+	mainTenant := tenant
+	mainTenant.IsMain = true
+	mainTenant.ResellerID = nil
+	out, err := svc.ApplyPublicConfigOverlay(context.Background(), mainTenant, base)
+	if err != nil {
+		t.Fatalf("apply main overlay failed: %v", err)
+	}
+	if !reflect.DeepEqual(out["contact"], mainContact) || !reflect.DeepEqual(base["contact"], mainContact) {
+		t.Fatalf("main site contacts must remain unchanged: %+v", out["contact"])
 	}
 }
 

@@ -1,14 +1,58 @@
 package presenter
 
 import (
+	"encoding/json"
+	"strings"
 	"testing"
 
+	productdomain "github.com/dujiao-next/internal/modules/catalog/product/domain"
 	resellerdomain "github.com/dujiao-next/internal/modules/reseller/domain"
 
 	"github.com/dujiao-next/internal/shared/jsonmap"
 	"github.com/dujiao-next/internal/shared/money"
 	"github.com/shopspring/decimal"
 )
+
+func TestProductImagesResponseIncludesPlatformDetailForPreview(t *testing.T) {
+	content := jsonmap.JSON{"zh-CN": `<p><img src="/uploads/platform-detail.png" /></p>`, "en-US": "Platform details"}
+	product := productdomain.Product{ID: 7, ContentJSON: content}
+	for _, custom := range []string{"", "/uploads/reseller-detail.png"} {
+		encoded, err := json.Marshal(NewResellerProductImagesResp(product, resellerdomain.ProductImages{DetailImage: custom}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var response struct {
+			PlatformDetailContent map[string]string `json:"platform_detail_content"`
+			CustomDetailImage     string            `json:"custom_detail_image"`
+			DetailImageSource     string            `json:"detail_image_source"`
+		}
+		if err := json.Unmarshal(encoded, &response); err != nil {
+			t.Fatal(err)
+		}
+		if response.PlatformDetailContent["zh-CN"] != content["zh-CN"] || response.PlatformDetailContent["en-US"] != content["en-US"] {
+			t.Fatalf("platform details unavailable for preview: %s", encoded)
+		}
+		wantSource := "platform"
+		if custom != "" {
+			wantSource = "custom"
+		}
+		if response.CustomDetailImage != custom || response.DetailImageSource != wantSource {
+			t.Fatalf("detail override changed: %s", encoded)
+		}
+	}
+}
+
+func TestDomainResponseIncludesDNSInstructionsWithoutLeaseOrProviderID(t *testing.T) {
+	row := resellerdomain.Domain{Domain: "customer.example.test", RootDomain: "customer.example.test", SyncToken: "private-worker-lease", ExternalHostnameID: "private-provider-id", DNSRecordsJSON: jsonmap.JSON{"records": []map[string]string{{"type": "CNAME", "name": "customer.example.test", "value": "entry.example.test"}}}}
+	resp := NewResellerDomainResp(&row)
+	if len(resp.DNSRecords) != 1 || resp.DNSRecords[0].Value != "entry.example.test" {
+		t.Fatal("DNS instructions were not decoded")
+	}
+	encoded, err := json.Marshal(resp)
+	if err != nil || strings.Contains(string(encoded), "private-worker-lease") || strings.Contains(string(encoded), "private-provider-id") {
+		t.Fatal("internal synchronization fields exposed")
+	}
+}
 
 func TestResellerLedgerRespOmitsSensitiveSnapshotFields(t *testing.T) {
 	orderID := uint(10)

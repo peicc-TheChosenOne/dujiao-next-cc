@@ -179,7 +179,7 @@ func (s *Service) SendCustomEmail(toEmail, subject, body string) error {
 	}
 	body = strings.TrimSpace(body)
 	if body == "" {
-		body = "这是一封来自 Dujiao-Next 的 SMTP 测试邮件，说明当前配置可正常发送。"
+		body = "这是一封 SMTP 配置测试邮件，说明当前配置可正常发送。"
 	}
 	return s.sendTextEmail(toEmail, subject, body)
 }
@@ -761,4 +761,9 @@ func isEmailRecipientRejected(err error) bool {
 		}
 	}
 	return false
+}
+
+// SendLoginSecurityNotice contains no authenticator secret or recovery codes.
+func (s *Service) SendLoginSecurityNotice(to, action, locale string, brand mailbrand.Brand) error {
+	return s.sendTextEmail(to, i18n.T(locale, "email.login_security_subject"), i18n.Sprintf(locale, "email.login_security_body", i18n.T(locale, "email.login_security_"+action)), brand)
 }

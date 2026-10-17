@@ -1,6 +1,7 @@
 package gormstore
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"testing"
@@ -287,6 +288,40 @@ func TestProductStoreSoftDeleteHidesProductAndRejectsStockMutations(t *testing.T
 		if err != nil || affected != 0 {
 			t.Fatalf("%s must not mutate soft-deleted product, affected=%d err=%v", operation, affected, err)
 		}
+	}
+}
+
+func TestProductStoreRestoresDeletedProductAndRejectsSecondRestore(t *testing.T) {
+	repo, db := setupProductStoreTest(t)
+	original := createManualProduct(t, repo, "restorable-product", 10, 0, 0)
+	if err := repo.Delete(strconv.FormatUint(uint64(original.ID), 10)); err != nil {
+		t.Fatal(err)
+	}
+	deleted, err := repo.GetBySlugUnscoped(original.Slug)
+	if err != nil || deleted == nil || deleted.DeletedAt == nil {
+		t.Fatalf("load deleted product: %+v err=%v", deleted, err)
+	}
+	duplicate := productdomain.Product{CategoryID: 1, Slug: original.Slug, TitleJSON: original.TitleJSON}
+	if err := repo.Create(&duplicate); err == nil {
+		t.Fatal("global slug uniqueness must include deleted products")
+	}
+	deleted.TitleJSON = jsonmap.JSON{"zh-CN": "Restored title"}
+	if err := repo.Restore(deleted); err != nil {
+		t.Fatal(err)
+	}
+	var restored productdomain.Product
+	if err := db.First(&restored, original.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if restored.DeletedAt != nil || restored.TitleJSON["zh-CN"] != "Restored title" || !restored.CreatedAt.Equal(original.CreatedAt) {
+		t.Fatalf("restore must retain identity and update fields: %+v", restored)
+	}
+	deleted.TitleJSON = jsonmap.JSON{"zh-CN": "Second request"}
+	if err := repo.Restore(deleted); !errors.Is(err, productcontract.ErrSlugExists) {
+		t.Fatalf("second restore must reject an already restored product, got %v", err)
+	}
+	if err := db.First(&restored, original.ID).Error; err != nil || restored.TitleJSON["zh-CN"] != "Restored title" {
+		t.Fatalf("second restore must not overwrite existing content: %+v err=%v", restored, err)
 	}
 }
 

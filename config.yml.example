@@ -1,11 +1,14 @@
 # Dujiao-Next 配置文件
 #
+# 将本文件复制为 config.yml；运行参数留在该文件。
+# 将 config.private.yml.example 复制为 config.private.yml，把真实连接地址、密码和密钥填在私有文件中。
+# 两个运行配置都不提交到 Git。旧的单文件配置仍兼容。
 # 首次启动前必须把下面三个占位密钥替换为彼此不同的强随机值，否则服务会拒绝启动。
 # 可分别执行三次：openssl rand -hex 32
 
 app:
   secret_key: your-secret-key-change-in-production-please # 务必修改，用于 AES-256 加密敏感数据
-  totp_issuer: Dujiao-Next                          # 后台 2FA 验证器中显示的发行方名称（避免 & 等特殊字符）
+  totp_issuer: AI大玩家                            # 用户/管理员 2FA 验证器中显示的发行方名称（避免 & 等特殊字符）
 
 server:
   host: 0.0.0.0
@@ -175,8 +178,24 @@ reseller:
   # false 时使用原始 Host；true 时优先使用 X-Forwarded-Host。
   trusted_forwarded_host: false
   # 管理员为分销商分配系统二级域名时使用的基础域名，例如 hello.{subdomain_base}。
+  # 配置后，审核通过会自动分配 r{分销商ID}.{subdomain_base}；已有系统域名优先复用。
+  # 将统一入口域名（例如 entry.example.com）加入 main_hosts，避免分配给分销商。
   # 生产启用前请配置为已经做好 wildcard DNS/TLS 的域名，例如 shop.example.com。
   subdomain_base: ""
+  # Cloudflare for SaaS：自动验证 DNS/HTTPS，全部就绪后才允许管理员审核。
+  # 启用前必须配置 SaaS fallback origin、统一入口和源站（见 deploy/nginx-cloudflare-saas.conf.example）；queue.enabled 必须为 true。
+  domain_binding:
+    enabled: false
+    provider: cloudflare
+    cname_target: "" # 例如 entry.example.com，填写纯主机名，不带协议或路径。
+    sync_batch_size: 50
+    max_custom_domains_per_reseller: 5 # 每个分销商的根域名组数，每组包含根域名和 www。
+    max_hostnames: 100 # 平台自动接入主机名总上限；提高前先核对 Cloudflare 计费。
+    pending_expiry_hours: 168 # 未完成技术验证的域名超过 7 天自动禁用并清理远端资源。
+    cloudflare:
+      zone_id: ""
+      # 通常留空，使用 SaaS zone 的 fallback origin；只有需要逐个主机名指定其他源站时才填写。
+      custom_origin: ""
   # 是否允许普通用户在个人中心自助提交分销商申请。
   self_apply_enabled: true
   # 分销利润入账后转为「可提现」的确认天数（0 表示即时到账，最大 3650）。

@@ -53,11 +53,11 @@ func openResellerPricingRepoTestDB(t *testing.T) *gorm.DB {
 func seedResellerPricingProduct(t *testing.T, db *gorm.DB, slug string, activeSKUCount int) (productdomain.Product, []productdomain.ProductSKU) {
 	t.Helper()
 	var category categorydomain.Category
-	if err := db.FirstOrCreate(&category, categorydomain.Category{
+	if err := db.Where("slug = ?", "repo-pricing").Attrs(categorydomain.Category{
 		Slug:     "repo-pricing",
 		NameJSON: jsonmap.JSON{"zh-CN": "repo-pricing"},
 		IsActive: true,
-	}).Error; err != nil {
+	}).FirstOrCreate(&category).Error; err != nil {
 		t.Fatalf("seed category failed: %v", err)
 	}
 	product := productdomain.Product{
@@ -77,15 +77,16 @@ func seedResellerPricingProduct(t *testing.T, db *gorm.DB, slug string, activeSK
 	skus := make([]productdomain.ProductSKU, 0, activeSKUCount)
 	for i := 0; i < activeSKUCount; i++ {
 		sku := productdomain.ProductSKU{
-			ProductID:        product.ID,
-			SKUCode:          fmt.Sprintf("%s-sku-%d", slug, i+1),
-			PriceAmount:      money.FromDecimal(decimal.NewFromInt(100 + int64(i))),
-			CostPriceAmount:  money.FromDecimal(decimal.NewFromInt(50)),
-			ManualStockTotal: constants.ManualStockUnlimited,
-			IsActive:         true,
-			SortOrder:        activeSKUCount - i,
-			CreatedAt:        time.Now(),
-			UpdatedAt:        time.Now(),
+			ProductID:         product.ID,
+			SKUCode:           fmt.Sprintf("%s-sku-%d", slug, i+1),
+			PriceAmount:       money.FromDecimal(decimal.NewFromInt(100 + int64(i))),
+			CostPriceAmount:   money.FromDecimal(decimal.NewFromInt(50)),
+			SupplyPriceAmount: pricingSupplyPointer(),
+			ManualStockTotal:  constants.ManualStockUnlimited,
+			IsActive:          true,
+			SortOrder:         activeSKUCount - i,
+			CreatedAt:         time.Now(),
+			UpdatedAt:         time.Now(),
 		}
 		if err := db.Create(&sku).Error; err != nil {
 			t.Fatalf("create sku for %s failed: %v", slug, err)
@@ -105,7 +106,7 @@ func TestResellerPricingRepositoryProductSettingsAndHiddenProducts(t *testing.T)
 	productHidden, _ := seedResellerPricingProduct(t, db, "product-hidden", 1)
 	allSKUHidden, allHiddenSKUs := seedResellerPricingProduct(t, db, "all-sku-hidden", 2)
 	partialSKUHidden, partialHiddenSKUs := seedResellerPricingProduct(t, db, "partial-sku-hidden", 2)
-	otherResellerHidden, _ := seedResellerPricingProduct(t, db, "other-reseller-hidden", 1)
+	otherResellerHidden, otherSKUs := seedResellerPricingProduct(t, db, "other-reseller-hidden", 1)
 
 	settings := []resellerdomain.ProductSetting{
 		{
@@ -160,6 +161,10 @@ func TestResellerPricingRepositoryProductSettingsAndHiddenProducts(t *testing.T)
 			PricingMode: resellerdomain.PricingModeInherit,
 		},
 	}
+	settings = append(settings,
+		resellerdomain.ProductSetting{ResellerID: profile.ID, ProductID: partialSKUHidden.ID, SKUID: partialHiddenSKUs[1].ID, IsListed: true, PricingMode: resellerdomain.PricingModeFixedPrice, FixedPriceAmount: money.FromDecimal(decimal.NewFromInt(130))},
+		resellerdomain.ProductSetting{ResellerID: profile.ID, ProductID: otherResellerHidden.ID, SKUID: otherSKUs[0].ID, IsListed: true, PricingMode: resellerdomain.PricingModeFixedPrice, FixedPriceAmount: money.FromDecimal(decimal.NewFromInt(130))})
+
 	for i := range settings {
 		wantListed := settings[i].IsListed
 		if err := db.Create(&settings[i]).Error; err != nil {
@@ -322,3 +327,5 @@ func TestResellerPricingRepositoryRelatedAccountAndSnapshot(t *testing.T) {
 		t.Fatalf("missing snapshot should be nil, got %+v", missing)
 	}
 }
+
+func pricingSupplyPointer() *money.Amount { a := money.FromDecimal(decimal.NewFromInt(100)); return &a }

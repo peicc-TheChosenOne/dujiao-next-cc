@@ -3,6 +3,8 @@ import { GOOGLE_REDIRECT_API_PATHS } from './googleRedirect.ts'
 const PUBLIC_AUTH_ENDPOINTS = new Set([
   '/auth/login',
   '/auth/login/verify-2fa',
+  '/auth/login/2fa/setup',
+  '/auth/login/2fa/enable',
   '/auth/register',
   '/auth/send-verify-code',
   '/auth/telegram/login',

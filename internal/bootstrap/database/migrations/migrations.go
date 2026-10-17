@@ -3,25 +3,28 @@ package migrations
 import (
 	"errors"
 	"fmt"
-	"strings"
-	"time"
-
 	"github.com/dujiao-next/internal/constants"
 	cardsecretdomain "github.com/dujiao-next/internal/modules/cardsecret/domain"
 	cartdomain "github.com/dujiao-next/internal/modules/cart/domain"
-	externalidentitydomain "github.com/dujiao-next/internal/modules/identity/externalidentity/domain"
-
 	categorydomain "github.com/dujiao-next/internal/modules/catalog/category/domain"
 	productdomain "github.com/dujiao-next/internal/modules/catalog/product/domain"
+	externalidentitydomain "github.com/dujiao-next/internal/modules/identity/externalidentity/domain"
 	orderdomain "github.com/dujiao-next/internal/modules/order/domain"
 	paymentdomain "github.com/dujiao-next/internal/modules/payment/domain"
 	procurementdomain "github.com/dujiao-next/internal/modules/procurement/domain"
+	resellerapp "github.com/dujiao-next/internal/modules/reseller/application"
+	resellercontract "github.com/dujiao-next/internal/modules/reseller/contract"
+	resellerdomain "github.com/dujiao-next/internal/modules/reseller/domain"
+	resellerstore "github.com/dujiao-next/internal/modules/reseller/infrastructure/gormstore"
 	settingsstore "github.com/dujiao-next/internal/modules/settings/infrastructure/gormstore"
 	"github.com/dujiao-next/internal/platform/database/gormdb"
 	"github.com/dujiao-next/internal/shared/jsonmap"
 	"github.com/dujiao-next/internal/shared/money"
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
+	"strings"
+	"time"
 )
 
 const (
@@ -908,4 +911,94 @@ func ensureCategoryParentMigration() error {
 		},
 	}
 	return gormdb.DB.Save(&doneMarker).Error
+}
+
+const resellerSupplyMigrationKey = "migration/reseller_supply_fixed_price_v1"
+
+func ensureResellerSupplyMigration() error {
+	return migrateResellerSupply(gormdb.DB)
+}
+
+// Only the historical retail price is frozen. Supply quotes are never populated.
+func migrateResellerSupply(db *gorm.DB) error {
+	if db == nil {
+		return errors.New("database is not initialized")
+	}
+	var marker settingsstore.SettingRecord
+	if err := db.First(&marker, "key = ?", resellerSupplyMigrationKey).Error; err == nil && migrationDone(marker.ValueJSON) {
+		return nil
+	} else if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return err
+	}
+	return db.Transaction(func(tx *gorm.DB) error {
+		marker := settingsstore.SettingRecord{Key: resellerSupplyMigrationKey, ValueJSON: jsonmap.JSON{"done": false}}
+		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&marker).Error; err != nil {
+			return err
+		}
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&marker, "key = ?", resellerSupplyMigrationKey).Error; err != nil {
+			return err
+		}
+		if migrationDone(marker.ValueJSON) {
+			return nil
+		}
+		var profiles []resellerdomain.Profile
+		if err := tx.Where("deleted_at IS NULL").Order("id ASC").Find(&profiles).Error; err != nil {
+			return err
+		}
+		var products []productdomain.Product
+		if err := tx.Preload("SKUs", "deleted_at IS NULL").Where("deleted_at IS NULL").Order("id ASC").Find(&products).Error; err != nil {
+			return err
+		}
+		store := resellerstore.New(tx)
+		invalid := make([]interface{}, 0)
+		processed := 0
+		for _, profile := range profiles {
+			for _, product := range products {
+				ids := make([]uint, 0, len(product.SKUs))
+				for _, sku := range product.SKUs {
+					ids = append(ids, sku.ID)
+				}
+				settings, err := store.ListProductSettingsForPricing(profile.ID, []uint{product.ID}, ids)
+				if err != nil {
+					return err
+				}
+				parents, skus := resellercontract.BuildSettingIndexes(settings)
+				parent := parents[product.ID]
+				for _, sku := range product.SKUs {
+					previous := skus[resellercontract.SettingKey{ProductID: product.ID, SKUID: sku.ID}]
+					price, _, err := resellerapp.ResolveUnitAmount(&profile, parent, previous, sku.PriceAmount.Decimal)
+					if err == nil {
+						err = resellerapp.ValidateUnitAmount(&profile, &sku, sku.PriceAmount.Decimal, price)
+					}
+					setting := resellerdomain.ProductSetting{ResellerID: profile.ID, ProductID: product.ID, SKUID: sku.ID, IsListed: true, PricingMode: resellerdomain.PricingModeFixedPrice}
+					if previous != nil {
+						setting = *previous
+						setting.PricingMode = resellerdomain.PricingModeFixedPrice
+					}
+					setting.MarkupPercent = money.FromDecimal(decimal.Zero)
+					setting.FixedMarkupAmount = money.FromDecimal(decimal.Zero)
+					setting.FixedPriceAmount = money.FromDecimal(price)
+					if err != nil {
+						setting.IsListed = false
+						invalid = append(invalid, jsonmap.JSON{"reseller_id": profile.ID, "product_id": product.ID, "sku_id": sku.ID, "reason": err.Error()})
+					}
+					if _, err := store.UpsertSetting(setting); err != nil {
+						return err
+					}
+					processed++
+				}
+				if parent != nil {
+					parent.PricingMode = resellerdomain.PricingModeInherit
+					parent.FixedPriceAmount = money.FromDecimal(decimal.Zero)
+					parent.FixedMarkupAmount = money.FromDecimal(decimal.Zero)
+					parent.MarkupPercent = money.FromDecimal(decimal.Zero)
+					if _, err := store.UpsertSetting(*parent); err != nil {
+						return err
+					}
+				}
+			}
+		}
+		marker.ValueJSON = jsonmap.JSON{"done": true, "migrated_at": time.Now().UTC().Format(time.RFC3339), "processed": processed, "invalid": invalid}
+		return tx.Save(&marker).Error
+	})
 }

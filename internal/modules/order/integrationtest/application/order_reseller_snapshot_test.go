@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"gorm.io/driver/postgres"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -82,10 +84,26 @@ func newOrderResellerSnapshotFixture(t *testing.T) orderResellerSnapshotFixture 
 	t.Helper()
 
 	dsn := fmt.Sprintf("file:order_reseller_snapshot_%d?mode=memory&cache=shared", time.Now().UnixNano())
-	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("open sqlite failed: %v", err)
+	var db *gorm.DB
+	var err error
+	if pgDSN := os.Getenv("TEST_SUPPLY_POSTGRES_DSN"); pgDSN != "" {
+		base, openErr := gorm.Open(postgres.Open(pgDSN), &gorm.Config{})
+		if openErr != nil {
+			t.Fatal(openErr)
+		}
+		schema := fmt.Sprintf("supply_order_%d", time.Now().UnixNano())
+		if err := base.Exec("CREATE SCHEMA " + schema).Error; err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { base.Exec("DROP SCHEMA " + schema + " CASCADE"); conn, _ := base.DB(); conn.Close() })
+		db, err = gorm.Open(postgres.Open(pgDSN+" search_path="+schema), &gorm.Config{DisableForeignKeyConstraintWhenMigrating: true})
+	} else {
+		db, err = gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { conn, _ := db.DB(); conn.Close() })
 	if err := db.AutoMigrate(
 		&userdomain.User{},
 		&categorydomain.Category{},
@@ -143,14 +161,15 @@ func newOrderResellerSnapshotFixture(t *testing.T) orderResellerSnapshotFixture 
 		t.Fatalf("create product failed: %v", err)
 	}
 	sku := productdomain.ProductSKU{
-		ProductID:        product.ID,
-		SKUCode:          productdomain.DefaultSKUCode,
-		PriceAmount:      money.FromDecimal(decimal.NewFromInt(100)),
-		CostPriceAmount:  money.FromDecimal(decimal.NewFromInt(50)),
-		ManualStockTotal: constants.ManualStockUnlimited,
-		IsActive:         true,
-		CreatedAt:        time.Now(),
-		UpdatedAt:        time.Now(),
+		ProductID:         product.ID,
+		SKUCode:           productdomain.DefaultSKUCode,
+		PriceAmount:       money.FromDecimal(decimal.NewFromInt(100)),
+		CostPriceAmount:   money.FromDecimal(decimal.NewFromInt(50)),
+		SupplyPriceAmount: orderSupplyPointer(decimal.NewFromInt(100)),
+		ManualStockTotal:  constants.ManualStockUnlimited,
+		IsActive:          true,
+		CreatedAt:         time.Now(),
+		UpdatedAt:         time.Now(),
 	}
 	if err := db.Create(&sku).Error; err != nil {
 		t.Fatalf("create sku failed: %v", err)
@@ -230,31 +249,28 @@ func (f orderResellerSnapshotFixture) addResellerSnapshotProduct(t *testing.T, s
 		t.Fatalf("create extra product failed: %v", err)
 	}
 	sku := productdomain.ProductSKU{
-		ProductID:        product.ID,
-		SKUCode:          productdomain.DefaultSKUCode,
-		PriceAmount:      money.FromDecimal(base),
-		CostPriceAmount:  money.FromDecimal(cost),
-		ManualStockTotal: constants.ManualStockUnlimited,
-		IsActive:         true,
-		CreatedAt:        time.Now(),
-		UpdatedAt:        time.Now(),
+		ProductID:         product.ID,
+		SKUCode:           productdomain.DefaultSKUCode,
+		PriceAmount:       money.FromDecimal(base),
+		CostPriceAmount:   money.FromDecimal(cost),
+		SupplyPriceAmount: orderSupplyPointer(base),
+		ManualStockTotal:  constants.ManualStockUnlimited,
+		IsActive:          true,
+		CreatedAt:         time.Now(),
+		UpdatedAt:         time.Now(),
 	}
 	if err := f.db.Create(&sku).Error; err != nil {
 		t.Fatalf("create extra sku failed: %v", err)
 	}
+	retail := base.Mul(decimal.RequireFromString("1.2"))
 	if fixedMarkup.GreaterThanOrEqual(decimal.Zero) {
-		setting := resellerdomain.ProductSetting{
-			ResellerID:        f.profile.ID,
-			ProductID:         product.ID,
-			SKUID:             0,
-			IsListed:          true,
-			PricingMode:       resellerdomain.PricingModeFixedMarkup,
-			FixedMarkupAmount: money.FromDecimal(fixedMarkup),
-		}
-		if err := f.db.Create(&setting).Error; err != nil {
-			t.Fatalf("create extra product-level setting failed: %v", err)
-		}
+		retail = base.Add(fixedMarkup)
 	}
+	setting := resellerdomain.ProductSetting{ResellerID: f.profile.ID, ProductID: product.ID, SKUID: sku.ID, IsListed: true, PricingMode: resellerdomain.PricingModeFixedPrice, FixedPriceAmount: money.FromDecimal(retail)}
+	if err := f.db.Create(&setting).Error; err != nil {
+		t.Fatal(err)
+	}
+
 	return product, sku
 }
 
@@ -304,7 +320,7 @@ func TestPreviewOrderResellerRejectsCouponCode(t *testing.T) {
 
 func TestCreateOrderResellerWritesSnapshotAndTenantFields(t *testing.T) {
 	f := newOrderResellerSnapshotFixture(t)
-	order, err := f.svc.CreateOrder(f.createInput(f.buyer.ID))
+	order, err := createConfirmedOrder(t, f.svc, f.createInput(f.buyer.ID))
 	if err != nil {
 		t.Fatalf("CreateOrder failed: %v", err)
 	}
@@ -389,6 +405,7 @@ func TestCreateOrderResellerRuntimePricesMatchPreviewAndSnapshotAcrossRuleSource
 		t.Fatalf("reseller preview must not apply main discounts: %+v", preview)
 	}
 
+	input.PricingRevision = preview.PricingRevision
 	order, err := f.svc.CreateOrder(input)
 	if err != nil {
 		t.Fatalf("CreateOrder failed: %v", err)
@@ -435,8 +452,6 @@ func TestCreateOrderResellerRuntimePricesMatchPreviewAndSnapshotAcrossRuleSource
 	}
 	for _, source := range []string{
 		resellermodule.RuleSourceSKU,
-		resellermodule.RuleSourceProduct,
-		resellermodule.RuleSourceProfile,
 	} {
 		if !seenSources[source] {
 			t.Fatalf("missing pricing snapshot source %q in %+v", source, seenSources)
@@ -489,7 +504,7 @@ func TestPreviewAndCreateOrderResellerRejectServicePersistedHiddenProductWithout
 
 func TestCreateOrderResellerOwnerSelfDealingWritesZeroEffectiveProfit(t *testing.T) {
 	f := newOrderResellerSnapshotFixture(t)
-	order, err := f.svc.CreateOrder(f.createInput(f.owner.ID))
+	order, err := createConfirmedOrder(t, f.svc, f.createInput(f.owner.ID))
 	if err != nil {
 		t.Fatalf("CreateOrder owner failed: %v", err)
 	}
@@ -510,7 +525,7 @@ func TestCreateOrderResellerOwnerSelfDealingWritesZeroEffectiveProfit(t *testing
 
 func TestCreateGuestOrderResellerSnapshotBuyerUserIDZero(t *testing.T) {
 	f := newOrderResellerSnapshotFixture(t)
-	order, err := f.svc.CreateGuestOrder(CreateGuestOrderInput{
+	order, err := createConfirmedGuestOrder(t, f.svc, CreateGuestOrderInput{
 		Email:         "guest-reseller@example.com",
 		OrderPassword: "guest-pass",
 		Tenant:        f.tenant,
@@ -644,5 +659,102 @@ func TestOrderServiceTenantScopedGuestQueries(t *testing.T) {
 	}
 	if total != 1 || len(orders) != 1 || orders[0].ID != resellerOrder.ID {
 		t.Fatalf("expected only reseller guest order, total=%d orders=%+v", total, orders)
+	}
+}
+
+func orderSupplyPointer(d decimal.Decimal) *money.Amount { a := money.FromDecimal(d); return &a }
+func createConfirmedOrder(t *testing.T, svc *OrderService, input CreateOrderInput) (*orderdomain.Order, error) {
+	t.Helper()
+	preview, err := svc.PreviewOrder(input)
+	if err != nil {
+		return nil, err
+	}
+	input.PricingRevision = preview.PricingRevision
+	return svc.CreateOrder(input)
+}
+func createConfirmedGuestOrder(t *testing.T, svc *OrderService, input CreateGuestOrderInput) (*orderdomain.Order, error) {
+	t.Helper()
+	preview, err := svc.PreviewGuestOrder(input)
+	if err != nil {
+		return nil, err
+	}
+	input.PricingRevision = preview.PricingRevision
+	return svc.CreateGuestOrder(input)
+}
+
+func TestResellerOrderRejectsStalePreviewAndKeepsCreatedSnapshot(t *testing.T) {
+	f := newOrderResellerSnapshotFixture(t)
+	sqlDB, _ := f.db.DB()
+	sqlDB.SetMaxOpenConns(1)
+	input := f.createInput(f.buyer.ID)
+	preview, err := f.svc.PreviewOrder(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input.PricingRevision = preview.PricingRevision
+	if err := f.db.Model(&productdomain.ProductSKU{}).Where("id = ?", f.sku.ID).Update("supply_price_amount", "110").Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.svc.CreateOrder(input); !errors.Is(err, resellercontract.ErrPricingChanged) {
+		t.Fatal("stale preview accepted", err)
+	}
+	var count int64
+	f.db.Model(&orderdomain.Order{}).Count(&count)
+	if count != 0 {
+		t.Fatal("stale request created an order")
+	}
+	order, err := createConfirmedOrder(t, f.svc, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, err := f.resellerRepo.GetOrderSnapshotByOrderID(order.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.db.Model(&productdomain.ProductSKU{}).Where("id = ?", f.sku.ID).Update("supply_price_amount", "120")
+	after, err := f.resellerRepo.GetOrderSnapshotByOrderID(order.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if before.BaseAmount.String() != "110.00" || after.BaseAmount.String() != "110.00" || after.ProfitAmount.String() != "20.00" {
+		t.Fatal("snapshot was repriced", before, after)
+	}
+	if fmt.Sprint(after.PricingSnapshotJSON["pricing_version"]) != "1" || after.PricingSnapshotJSON["supply_amount"] != "110.00" {
+		t.Fatal("missing versioned supply snapshot", after.PricingSnapshotJSON)
+	}
+}
+
+type quoteChangeBeforeTransaction struct {
+	ordercontract.Store
+	change func() error
+}
+
+func (store quoteChangeBeforeTransaction) WithinTransaction(fn func(ordercontract.Transaction) error) error {
+	if err := store.change(); err != nil {
+		return err
+	}
+	return store.Store.WithinTransaction(fn)
+}
+func TestResellerQuoteChangeBetweenResolutionAndTransactionRollsBack(t *testing.T) {
+	f := newOrderResellerSnapshotFixture(t)
+	conn, _ := f.db.DB()
+	conn.SetMaxOpenConns(1)
+	store := quoteChangeBeforeTransaction{Store: ordergormstore.New(f.db, "test-guest-credential-secret-with-32-bytes"), change: func() error {
+		return f.db.Model(&productdomain.ProductSKU{}).Where("id = ?", f.sku.ID).Update("supply_price_amount", "110").Error
+	}}
+	svc := NewOrderService(OrderServiceOptions{OrderStore: store, UserStore: userstore.New(f.db), ProductStore: productgormstore.NewProductStore(f.db), ProductSKUStore: productgormstore.NewSKUStore(f.db), Queue: f.queue, ExpireMinutes: 15, ResellerPricingResolver: NewResellerPricingResolver(f.resellerRepo)})
+	input := f.createInput(f.buyer.ID)
+	preview, err := svc.PreviewOrder(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input.PricingRevision = preview.PricingRevision
+	if _, err := svc.CreateOrder(input); !errors.Is(err, resellercontract.ErrPricingChanged) {
+		t.Fatal("transaction reused stale supply", err)
+	}
+	var count int64
+	f.db.Model(&orderdomain.Order{}).Count(&count)
+	if count != 0 {
+		t.Fatal("stale transaction created rows")
 	}
 }

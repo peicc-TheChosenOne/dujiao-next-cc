@@ -3,12 +3,14 @@ package gormstore
 import (
 	"errors"
 	"strings"
+	"time"
 
 	resellercontract "github.com/dujiao-next/internal/modules/reseller/contract"
 
 	resellerdomain "github.com/dujiao-next/internal/modules/reseller/domain"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // CreateProfile 创建分销商资料。
@@ -21,11 +23,24 @@ func (r *Store) CreateProfile(profile *resellerdomain.Profile) error {
 
 // GetProfileByID 按 ID 获取分销商资料。
 func (r *Store) GetProfileByID(id uint) (*resellerdomain.Profile, error) {
+	return r.getProfileByID(id, false)
+}
+
+// GetProfileByIDForUpdate 锁定资料，串行处理同一分销商的审核和域名分配。
+func (r *Store) GetProfileByIDForUpdate(id uint) (*resellerdomain.Profile, error) {
+	return r.getProfileByID(id, true)
+}
+
+func (r *Store) getProfileByID(id uint, forUpdate bool) (*resellerdomain.Profile, error) {
 	if id == 0 {
 		return nil, nil
 	}
+	query := r.db
+	if forUpdate {
+		query = query.Clauses(clause.Locking{Strength: "UPDATE"})
+	}
 	var profile resellerdomain.Profile
-	if err := r.db.Preload("User", "deleted_at IS NULL").
+	if err := query.Preload("User", "deleted_at IS NULL").
 		Where("reseller_profiles.id = ? AND reseller_profiles.deleted_at IS NULL", id).
 		First(&profile).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -33,6 +48,7 @@ func (r *Store) GetProfileByID(id uint) (*resellerdomain.Profile, error) {
 		}
 		return nil, err
 	}
+	profile.PopulateLoginSecurity()
 	return &profile, nil
 }
 
@@ -50,7 +66,25 @@ func (r *Store) GetProfileByUserID(userID uint) (*resellerdomain.Profile, error)
 		}
 		return nil, err
 	}
+	profile.PopulateLoginSecurity()
 	return &profile, nil
+}
+
+// GetLoginSecurityResellerID reads the current role without caching or preloading users.
+func (r *Store) GetLoginSecurityResellerID(userID uint) (uint, error) {
+	id, _, err := r.GetResellerLoginRole(userID)
+	return id, err
+}
+
+func (r *Store) GetResellerLoginRole(userID uint) (uint, *time.Time, error) {
+	var row struct {
+		ID         uint
+		ReviewedAt *time.Time
+	}
+	err := r.db.Model(&resellerdomain.Profile{}).Select("id", "reviewed_at").
+		Where("user_id = ? AND status IN ? AND deleted_at IS NULL", userID, []string{resellerdomain.ProfileStatusActive, resellerdomain.ProfileStatusDisabled}).
+		Scan(&row).Error
+	return row.ID, row.ReviewedAt, err
 }
 
 // UpdateProfile 更新分销商资料。
@@ -84,6 +118,23 @@ func (r *Store) ListProfiles(filter resellercontract.ProfileListFilter) ([]resel
 		query = query.Joins("LEFT JOIN users ON users.id = reseller_profiles.user_id").
 			Where("LOWER(users.email) LIKE ? OR LOWER(users.display_name) LIKE ? OR CAST(reseller_profiles.id AS TEXT) = ?", like, like, keyword)
 	}
+	if filter.TwoFactorRequired == "true" || filter.TwoFactorRequired == "false" {
+		query = query.Where("reseller_profiles.user_id IN (?)", r.db.Table("users").Select("id").Where("reseller_totp_exempt = ?", filter.TwoFactorRequired == "false"))
+	}
+	if filter.TwoFactorBinding != "" {
+		users := r.db.Table("users").Select("id")
+		switch filter.TwoFactorBinding {
+		case "bound":
+			users = users.Where("totp_enabled_at IS NOT NULL")
+		case "unbound":
+			users = users.Where("totp_enabled_at IS NULL AND reseller_totp_reset_at IS NULL")
+		case "reset_pending":
+			users = users.Where("totp_enabled_at IS NULL AND reseller_totp_reset_at IS NOT NULL")
+		default:
+			users = users.Where("1 = 0")
+		}
+		query = query.Where("reseller_profiles.user_id IN (?)", users)
+	}
 	if filter.CreatedFrom != nil {
 		query = query.Where("reseller_profiles.created_at >= ?", *filter.CreatedFrom)
 	}
@@ -98,6 +149,9 @@ func (r *Store) ListProfiles(filter resellercontract.ProfileListFilter) ([]resel
 		Order("reseller_profiles.id DESC").
 		Find(&rows).Error; err != nil {
 		return nil, 0, err
+	}
+	for i := range rows {
+		rows[i].PopulateLoginSecurity()
 	}
 	return rows, total, nil
 }

@@ -135,15 +135,38 @@ func (s *WriteService) Create(input CreateProductInput) (*productdomain.Product,
 		productRepo := repositories.Products
 		skuRepo := repositories.SKUs
 		cardSecretRepo := repositories.CardSecrets
-		if err := productRepo.Create(&product); err != nil {
+		existing, err := productRepo.GetBySlugUnscoped(input.Slug)
+		if err != nil {
 			return err
+		}
+		if existing != nil {
+			if existing.DeletedAt == nil {
+				return productcontract.ErrSlugExists
+			}
+			product.ID = existing.ID
+			product.CreatedAt = existing.CreatedAt
+			if err := productRepo.Restore(&product); err != nil {
+				return err
+			}
+		} else if err := productRepo.Create(&product); err != nil {
+			return err
+		}
+		if locker, ok := skuRepo.(interface{ LockProduct(uint) error }); ok {
+			if err := locker.LockProduct(product.ID); err != nil {
+				return err
+			}
 		}
 		if len(normalizedSKUs) > 0 {
 			if err := s.applyProductSKUsWithStockGuard(skuRepo, cardSecretRepo, product.ID, fulfillmentType, normalizedSKUs); err != nil {
 				return err
 			}
-		} else if err := s.syncSingleProductSKU(skuRepo, product.ID, priceAmount, costPriceAmount, manualStockTotal, true); err != nil {
+		} else if err := s.syncSingleProductSKU(skuRepo, cardSecretRepo, product.ID, fulfillmentType, priceAmount, costPriceAmount, manualStockTotal); err != nil {
 			return err
+		}
+		if len(input.SKUs) == 0 {
+			if err := s.saveSingleSupplyQuote(skuRepo, product.ID, input); err != nil {
+				return err
+			}
 		}
 		if input.WholesalePrices != nil {
 			var skus []productdomain.ProductSKU

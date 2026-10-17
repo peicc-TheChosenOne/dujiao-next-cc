@@ -4,11 +4,19 @@ import { useI18n } from 'vue-i18n'
 import { bannerAPI } from '../api'
 import { getImageUrl } from '../utils/image'
 import { useLocalized } from './useProduct'
+import { useAppStore } from '../stores/app'
+import { useWindowSize } from '@vueuse/core'
+import { getResellerBannerOverride } from '../utils/resellerSiteConfig'
 
 export function useBannerCarousel() {
   const router = useRouter()
   const { t } = useI18n()
   const { getLocalizedText } = useLocalized()
+  const appStore = useAppStore()
+  const { width } = useWindowSize()
+  const resellerBanner = computed(() => getResellerBannerOverride(appStore.config?.tenant?.mode, appStore.config?.reseller_banner))
+  const isCustomBanner = computed(() => resellerBanner.value?.mode === 'custom')
+  const defaultHeroTitle = computed(() => String(appStore.config?.brand?.site_name || '').trim() || t('home.hero.title'))
 
   const banners = ref<any[]>([])
   const bannerLoading = ref(true)
@@ -29,7 +37,7 @@ export function useBannerCarousel() {
   }
 
   const bannerCount = computed(() => banners.value.length)
-  const showHeroSection = computed(() => bannerLoading.value || bannerCount.value > 0)
+  const showHeroSection = computed(() => resellerBanner.value?.mode !== 'hidden' && (bannerLoading.value || bannerCount.value > 0))
 
   const heroBanner = computed(() => {
     if (banners.value.length === 0) return null
@@ -79,7 +87,7 @@ export function useBannerCarousel() {
   const heroImage = computed(() => {
     const banner = heroBanner.value
     if (!banner) return ''
-    const isMobile = typeof window !== 'undefined' && window.innerWidth < 768
+    const isMobile = width.value < 768
     if (isMobile && banner.mobile_image) {
       return getImageUrl(banner.mobile_image)
     }
@@ -87,16 +95,19 @@ export function useBannerCarousel() {
   })
 
   const heroBadge = computed(() => {
+    if (isCustomBanner.value) return ''
     if (!heroBanner.value) return t('home.hero.badge')
     return getLocalizedText(heroBanner.value.title) || t('home.hero.badge')
   })
 
   const heroTitle = computed(() => {
-    if (!heroBanner.value) return t('home.hero.title')
-    return getLocalizedText(heroBanner.value.title) || t('home.hero.title')
+    if (isCustomBanner.value) return getLocalizedText(heroBanner.value?.title) || ''
+    if (!heroBanner.value) return defaultHeroTitle.value
+    return getLocalizedText(heroBanner.value.title) || defaultHeroTitle.value
   })
 
   const heroSubtitle = computed(() => {
+    if (isCustomBanner.value) return getLocalizedText(heroBanner.value?.subtitle) || ''
     if (!heroBanner.value) return t('home.hero.subtitle')
     return getLocalizedText(heroBanner.value.subtitle) || t('home.hero.subtitle')
   })
@@ -108,6 +119,8 @@ export function useBannerCarousel() {
   })
 
   const hasHeroLink = computed(() => heroLink.value.trim().length > 0)
+  const showHeroLink = computed(() => !isCustomBanner.value || hasHeroLink.value)
+  const showHeroOverlay = computed(() => !isCustomBanner.value || !!(heroTitle.value || heroSubtitle.value))
 
   const heroPrimaryButtonText = computed(() => {
     if (!hasHeroLink.value) return t('home.hero.cta')
@@ -122,12 +135,13 @@ export function useBannerCarousel() {
 
   const goToHeroLink = () => {
     if (!heroLink.value) {
+      if (isCustomBanner.value) return
       router.push('/products')
       return
     }
     const isExternal = /^https?:\/\//i.test(heroLink.value)
     if (isExternal || heroOpenInNewTab.value) {
-      window.open(heroLink.value, heroOpenInNewTab.value ? '_blank' : '_self')
+      window.open(heroLink.value, heroOpenInNewTab.value ? '_blank' : '_self', 'noopener,noreferrer')
       return
     }
     router.push(heroLink.value)
@@ -136,8 +150,12 @@ export function useBannerCarousel() {
   const loadBanners = async () => {
     bannerLoading.value = true
     try {
-      const response = await bannerAPI.list({ position: 'home_hero', limit: 5 })
-      banners.value = response.data.data || []
+      if (resellerBanner.value) {
+        banners.value = resellerBanner.value.mode === 'hidden' ? [] : [resellerBanner.value]
+      } else {
+        const response = await bannerAPI.list({ position: 'home_hero', limit: 5 })
+        banners.value = response.data.data || []
+      }
       currentBannerIndex.value = 0
       startHeroAutoPlay()
     } catch (error) {
@@ -156,6 +174,9 @@ export function useBannerCarousel() {
     currentBannerIndex,
     bannerCount,
     showHeroSection,
+    isCustomBanner,
+    showHeroLink,
+    showHeroOverlay,
     heroBanner,
     heroImage,
     heroBadge,

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -44,11 +45,13 @@ return {current, ttl}
 type localRateLimitEntry struct {
 	count     int64
 	expiresAt time.Time
+	owner     string
 }
 
 type localRateLimiter struct {
 	mu                      sync.Mutex
 	entries                 map[string]localRateLimitEntry
+	ownerKeys               map[string]int
 	lastCapacityWarningAt   time.Time
 	lastRedisFallbackWarnAt time.Time
 }
@@ -56,41 +59,54 @@ type localRateLimiter struct {
 const localRateLimitMaxEntries = 10000
 const localRateLimitWarningInterval = time.Minute
 
-func (l *localRateLimiter) increment(key string, rule RateLimitRule, now time.Time) (int64, int64, bool) {
+// localRateLimitMaxKeysPerOwner 单个客户端 IP 同时持有的计数器上限：防止一个 IP 换着账号/标识
+// 把计数表塞满，导致其他用户的新 key 全部被拒。超过上限的新 key 按超限处理。
+const localRateLimitMaxKeysPerOwner = 100
+
+// increment 为 key 计数；owner 为发起请求的客户端 IP，用于限制单个 IP 能占用的计数器数量。
+func (l *localRateLimiter) increment(key, owner string, rule RateLimitRule, now time.Time) (int64, int64, bool) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if l.entries == nil {
 		l.entries = make(map[string]localRateLimitEntry)
 	}
+	if l.ownerKeys == nil {
+		l.ownerKeys = make(map[string]int)
+	}
 
 	entry, exists := l.entries[key]
 	if exists && (entry.expiresAt.IsZero() || !now.Before(entry.expiresAt)) {
-		delete(l.entries, key)
+		l.deleteEntryLocked(key, entry)
 		exists = false
 	}
 	if !exists {
+		windowTTL := int64(rule.WindowSeconds)
+		if windowTTL < 1 {
+			windowTTL = 1
+		}
+		if owner != "" && l.ownerKeys[owner] >= localRateLimitMaxKeysPerOwner {
+			l.purgeExpiredLocked(now)
+		}
+		if owner != "" && l.ownerKeys[owner] >= localRateLimitMaxKeysPerOwner {
+			return int64(rule.MaxRequests) + 1, windowTTL, false
+		}
 		if len(l.entries) >= localRateLimitMaxEntries {
-			for existingKey, existing := range l.entries {
-				if existing.expiresAt.IsZero() || !now.Before(existing.expiresAt) {
-					delete(l.entries, existingKey)
-				}
-			}
+			l.purgeExpiredLocked(now)
 		}
 		if len(l.entries) >= localRateLimitMaxEntries {
 			// 不淘汰仍在窗口内的计数器；容量耗尽时仅拒绝新的 key，
 			// 防止攻击者用高基数 IP/标识绕过已有 key 的频率限制。
-			ttl := int64(rule.WindowSeconds)
-			if ttl < 1 {
-				ttl = 1
-			}
 			shouldWarn := l.lastCapacityWarningAt.IsZero() ||
 				now.Sub(l.lastCapacityWarningAt) >= localRateLimitWarningInterval
 			if shouldWarn {
 				l.lastCapacityWarningAt = now
 			}
-			return int64(rule.MaxRequests) + 1, ttl, shouldWarn
+			return int64(rule.MaxRequests) + 1, windowTTL, shouldWarn
 		}
-		entry = localRateLimitEntry{expiresAt: now.Add(time.Duration(rule.WindowSeconds) * time.Second)}
+		entry = localRateLimitEntry{expiresAt: now.Add(time.Duration(rule.WindowSeconds) * time.Second), owner: owner}
+		if owner != "" {
+			l.ownerKeys[owner]++
+		}
 	}
 	entry.count++
 	if entry.count == int64(rule.MaxRequests)+1 && rule.BlockSeconds > 0 {
@@ -102,6 +118,26 @@ func (l *localRateLimiter) increment(key string, rule RateLimitRule, now time.Ti
 		ttl = 1
 	}
 	return entry.count, ttl, false
+}
+
+func (l *localRateLimiter) deleteEntryLocked(key string, entry localRateLimitEntry) {
+	delete(l.entries, key)
+	if entry.owner == "" {
+		return
+	}
+	if l.ownerKeys[entry.owner] <= 1 {
+		delete(l.ownerKeys, entry.owner)
+		return
+	}
+	l.ownerKeys[entry.owner]--
+}
+
+func (l *localRateLimiter) purgeExpiredLocked(now time.Time) {
+	for key, entry := range l.entries {
+		if entry.expiresAt.IsZero() || !now.Before(entry.expiresAt) {
+			l.deleteEntryLocked(key, entry)
+		}
+	}
 }
 
 func (l *localRateLimiter) shouldWarnRedisFallback(now time.Time) bool {
@@ -120,16 +156,30 @@ func (l *localRateLimiter) shouldWarnRedisFallback(now time.Time) bool {
 // 多实例部署必须配置共享 Redis 才能获得全局一致的计数。Redis 故障降级和
 // 本地容量耗尽都会输出节流后的 warning，避免故障期间产生日志洪泛。
 func RateLimitMiddleware(client *redis.Client, rule RateLimitRule, keyFunc RateLimitKeyFunc) gin.HandlerFunc {
-	local := &localRateLimiter{}
+	allow := RateLimitCheck(client, rule, keyFunc)
 	return func(c *gin.Context) {
-		if rule.WindowSeconds <= 0 || rule.MaxRequests <= 0 {
-			c.Next()
+		if !allow(c) {
 			return
+		}
+		c.Next()
+	}
+}
+
+// RateLimitCheck 返回只做判定的限流函数：超限时写入 429 响应并 Abort、返回 false，
+// 通过时返回 true 且不推进 handler 链。供需要先限流再自行分发的中间件使用。
+func RateLimitCheck(client *redis.Client, rule RateLimitRule, keyFunc RateLimitKeyFunc) func(*gin.Context) bool {
+	local := &localRateLimiter{}
+	return func(c *gin.Context) bool {
+		if rule.WindowSeconds <= 0 || rule.MaxRequests <= 0 {
+			return true
 		}
 
 		key := ""
 		if keyFunc != nil {
 			key = strings.TrimSpace(keyFunc(c))
+		}
+		if c.IsAborted() {
+			return false
 		}
 		if key == "" {
 			key = c.ClientIP()
@@ -142,7 +192,7 @@ func RateLimitMiddleware(client *redis.Client, rule RateLimitRule, keyFunc RateL
 		now := time.Now()
 		incrementLocal := func() {
 			var capacityWarning bool
-			count, ttlSeconds, capacityWarning = local.increment(key, rule, now)
+			count, ttlSeconds, capacityWarning = local.increment(key, c.ClientIP(), rule, now)
 			if capacityWarning {
 				logger.Warnw(
 					"rate_limit_local_capacity_exhausted",
@@ -215,10 +265,9 @@ func RateLimitMiddleware(client *redis.Client, rule RateLimitRule, keyFunc RateL
 				response.ErrorWithHTTPStatus(c, 429, response.CodeTooManyRequests, msg)
 			}
 			c.Abort()
-			return
+			return false
 		}
-
-		c.Next()
+		return true
 	}
 }
 
@@ -267,6 +316,18 @@ func KeyByUpstreamApiKey(c *gin.Context) string {
 	return KeyByIPAndHeader("Dujiao-Next-Api-Key")(c)
 }
 
+// KeyByJSONField 只按 JSON 字段（如登录账号）计数、不绑定 IP，用于拦截来自多个 IP 的分布式爆破；
+// 字段缺失时退回按 IP 计数。
+func KeyByJSONField(field string) RateLimitKeyFunc {
+	return func(c *gin.Context) string {
+		value := strings.ToLower(strings.TrimSpace(readJSONField(c, field)))
+		if value == "" {
+			return c.ClientIP()
+		}
+		return "field|" + value
+	}
+}
+
 // KeyByIPAndJSONField 使用 IP + JSON 字段作为限流 key
 func KeyByIPAndJSONField(field string) RateLimitKeyFunc {
 	return func(c *gin.Context) string {
@@ -278,30 +339,76 @@ func KeyByIPAndJSONField(field string) RateLimitKeyFunc {
 	}
 }
 
+// maxRateLimitJSONBodyBytes 限流取 key 时最多读取的请求体大小；登录类请求体远小于此，
+// 超出时拒绝请求，避免在限流之前就为超大请求体分配内存。
+const maxRateLimitJSONBodyBytes = 64 << 10
+
 func readJSONField(c *gin.Context, field string) string {
 	if c == nil || c.Request == nil || c.Request.Body == nil {
 		return ""
 	}
-	body, err := io.ReadAll(c.Request.Body)
+	body, err := io.ReadAll(io.LimitReader(c.Request.Body, maxRateLimitJSONBodyBytes+1))
 	if err != nil {
+		response.ErrorWithHTTPStatus(c, http.StatusBadRequest, response.CodeBadRequest, i18n.T(i18n.ResolveLocale(c), "error.bad_request"))
+		return ""
+	}
+	if len(body) > maxRateLimitJSONBodyBytes {
+		// 认证字段无法可靠提取时拒绝请求，不能退回 IP 计数后继续登录。
+		response.ErrorWithHTTPStatus(c, http.StatusRequestEntityTooLarge, response.CodeBadRequest, i18n.T(i18n.ResolveLocale(c), "error.request_too_large"))
 		return ""
 	}
 	c.Request.Body = io.NopCloser(bytes.NewBuffer(body))
 	if len(body) == 0 {
 		return ""
 	}
-	var payload map[string]interface{}
-	if err := json.Unmarshal(body, &payload); err != nil {
+	value, err := rateLimitJSONField(body, field)
+	if err != nil {
+		response.ErrorWithHTTPStatus(c, http.StatusBadRequest, response.CodeBadRequest, i18n.T(i18n.ResolveLocale(c), "error.bad_request"))
 		return ""
 	}
-	value, ok := payload[field]
-	if !ok {
-		return ""
+	return strings.TrimSpace(value)
+}
+
+func rateLimitJSONField(body []byte, field string) (string, error) {
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	token, err := decoder.Token()
+	if err != nil || token != json.Delim('{') {
+		return "", fmt.Errorf("invalid JSON object")
 	}
-	if text, ok := value.(string); ok {
-		return strings.TrimSpace(text)
+	value, seen := "", false
+	for decoder.More() {
+		key, err := decoder.Token()
+		if err != nil {
+			return "", err
+		}
+		var raw json.RawMessage
+		if err := decoder.Decode(&raw); err != nil {
+			return "", err
+		}
+		name, ok := key.(string)
+		if !ok {
+			return "", fmt.Errorf("invalid JSON key")
+		}
+		if strings.EqualFold(name, field) {
+			// typed JSON binding accepts case aliases and preserves a preceding
+			// string when a duplicate is null; reject ambiguous account fields.
+			if name != field || seen {
+				return "", fmt.Errorf("ambiguous JSON account field")
+			}
+			seen = true
+			if err := json.Unmarshal(raw, &value); err != nil {
+				return "", err
+			}
+		}
 	}
-	return ""
+	if token, err := decoder.Token(); err != nil || token != json.Delim('}') {
+		return "", fmt.Errorf("invalid JSON object")
+	}
+	var trailing json.RawMessage
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return "", fmt.Errorf("trailing JSON content")
+	}
+	return value, nil
 }
 
 func toInt64(value interface{}) (int64, bool) {

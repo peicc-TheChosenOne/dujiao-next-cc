@@ -2,12 +2,17 @@ package adminauthhttp
 
 import "github.com/gin-gonic/gin"
 
-// RegisterAdminLoginAuthRoutes 注册公开的管理员登录端点（需附带限流中间件）。
-func RegisterAdminLoginAuthRoutes(admin gin.IRoutes, handler *AdminLoginHandler, rateLimit gin.HandlerFunc) {
-	if admin == nil || handler == nil || rateLimit == nil {
+// RegisterAdminLoginAuthRoutes 注册公开的管理员登录端点（需附带至少一条限流中间件，按顺序执行）。
+func RegisterAdminLoginAuthRoutes(admin gin.IRoutes, handler *AdminLoginHandler, rateLimits ...gin.HandlerFunc) {
+	if admin == nil || handler == nil || len(rateLimits) == 0 {
 		panic("admin login auth routes: required dependency is nil")
 	}
-	admin.POST("/login", rateLimit, handler.AdminLogin)
+	for _, rateLimit := range rateLimits {
+		if rateLimit == nil {
+			panic("admin login auth routes: rate limit is nil")
+		}
+	}
+	admin.POST("/login", append(append([]gin.HandlerFunc{}, rateLimits...), handler.AdminLogin)...)
 }
 
 // RegisterAdmin2FAAuthRoutes 注册公开的管理员 2FA 挑战验证端点（需附带限流中间件）。

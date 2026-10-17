@@ -3,6 +3,8 @@ package migrations
 import (
 	"errors"
 	"fmt"
+	"gorm.io/driver/postgres"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -631,5 +633,190 @@ func TestAutoMigrateReplacesSupersededProcurementConstraintName(t *testing.T) {
 	assertModelIndexesExist(t, db, &procurementdomain.Order{})
 	if !db.Migrator().HasConstraint(&procurementdomain.Order{}, procurementOrderForeignKeyConstraint) {
 		t.Errorf("procurement index repair removed canonical constraint %s", procurementOrderForeignKeyConstraint)
+	}
+}
+
+func TestSupplyMigrationFreezesLegacyRetailAndIsAtomicAndIdempotent(t *testing.T) {
+	testSupplyMigration(t, setupSKUMigrationTestDB(t))
+}
+func TestSupplyMigrationPostgres(t *testing.T) {
+	dsn := os.Getenv("TEST_POSTGRES_DSN")
+	if dsn == "" {
+		t.Skip("TEST_POSTGRES_DSN is empty")
+	}
+	base, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	schema := fmt.Sprintf("supply_migration_%d", time.Now().UnixNano())
+	if err := base.Exec("CREATE SCHEMA " + schema).Error; err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { base.Exec("DROP SCHEMA " + schema + " CASCADE"); conn, _ := base.DB(); conn.Close() })
+	db, err := gorm.Open(postgres.Open(dsn+" search_path="+schema), &gorm.Config{DisableForeignKeyConstraintWhenMigrating: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { conn, _ := db.DB(); conn.Close() })
+	testSupplyMigration(t, db)
+}
+func testSupplyMigration(t *testing.T, db *gorm.DB) {
+	if err := db.AutoMigrate(&productdomain.Product{}, &productdomain.ProductSKU{}, &resellerdomain.Profile{}, &resellerdomain.ProductSetting{}, &settingsstore.SettingRecord{}); err != nil {
+		t.Fatal(err)
+	}
+	sqlDB, _ := db.DB()
+	sqlDB.SetMaxOpenConns(1)
+	profile := resellerdomain.Profile{UserID: 100, Status: resellerdomain.ProfileStatusActive, DefaultMarkupPercent: money.FromDecimal(decimal.NewFromInt(20)), MaxMarkupPercent: money.FromDecimal(decimal.NewFromInt(50))}
+	if err := db.Create(&profile).Error; err != nil {
+		t.Fatal(err)
+	}
+	product := productdomain.Product{Slug: "freeze", TitleJSON: jsonmap.JSON{"zh-CN": "freeze"}, CategoryID: 1, IsActive: true}
+	if err := db.Create(&product).Error; err != nil {
+		t.Fatal(err)
+	}
+	skus := []productdomain.ProductSKU{{ProductID: product.ID, SKUCode: "A", PriceAmount: money.FromDecimal(decimal.NewFromInt(100)), IsActive: true}, {ProductID: product.ID, SKUCode: "B", PriceAmount: money.FromDecimal(decimal.NewFromInt(200)), IsActive: true}}
+	if err := db.Create(&skus).Error; err != nil {
+		t.Fatal(err)
+	}
+	parent := resellerdomain.ProductSetting{ResellerID: profile.ID, ProductID: product.ID, SKUID: 0, IsListed: false, PricingMode: resellerdomain.PricingModeFixedMarkup, FixedMarkupAmount: money.FromDecimal(decimal.NewFromInt(10))}
+	if err := db.Select("*").Create(&parent).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&parent).Update("is_listed", false).Error; err != nil {
+		t.Fatal(err)
+	}
+	override := resellerdomain.ProductSetting{ResellerID: profile.ID, ProductID: product.ID, SKUID: skus[1].ID, IsListed: true, PricingMode: resellerdomain.PricingModeFixedPrice, FixedPriceAmount: money.FromDecimal(decimal.NewFromInt(190))}
+	if err := db.Create(&override).Error; err != nil {
+		t.Fatal(err)
+	}
+	writes := 0
+	failWrite := func(tx *gorm.DB) {
+		if tx.Statement.Table == "reseller_product_settings" {
+			writes++
+			if writes == 2 {
+				tx.AddError(errors.New("injected write failure"))
+			}
+		}
+	}
+	db.Callback().Create().Before("gorm:create").Register("fail_supply_migration", failWrite)
+	db.Callback().Update().Before("gorm:update").Register("fail_supply_migration", failWrite)
+	if err := migrateResellerSupply(db); err == nil {
+		t.Fatal("expected atomic migration failure")
+	}
+	db.Callback().Create().Remove("fail_supply_migration")
+	db.Callback().Update().Remove("fail_supply_migration")
+	var count int64
+	db.Model(&settingsstore.SettingRecord{}).Where("key = ?", resellerSupplyMigrationKey).Count(&count)
+	if count != 0 {
+		t.Fatal("failed migration marker was committed")
+	}
+	var original resellerdomain.ProductSetting
+	db.First(&original, override.ID)
+	if original.PricingMode != resellerdomain.PricingModeFixedPrice || original.FixedPriceAmount.String() != "190.00" {
+		t.Fatal("partial migration write", original)
+	}
+	if err := migrateResellerSupply(db); err != nil {
+		t.Fatal(err)
+	}
+	var frozen []resellerdomain.ProductSetting
+	db.Where("reseller_id = ? AND sku_id > 0", profile.ID).Order("sku_id ASC").Find(&frozen)
+	if len(frozen) != 2 || frozen[0].FixedPriceAmount.String() != "110.00" || frozen[1].FixedPriceAmount.String() != "190.00" || frozen[1].IsListed {
+		t.Fatalf("unexpected frozen prices %+v", frozen)
+	}
+	db.First(&parent, parent.ID)
+	if parent.IsListed || parent.PricingMode != resellerdomain.PricingModeInherit {
+		t.Fatal("parent visibility lost", parent)
+	}
+	db.Model(&resellerdomain.ProductSetting{}).Where("id = ?", frozen[0].ID).Update("fixed_price_amount", "150")
+	if err := migrateResellerSupply(db); err != nil {
+		t.Fatal(err)
+	}
+	db.First(&frozen[0], frozen[0].ID)
+	if frozen[0].FixedPriceAmount.String() != "150.00" {
+		t.Fatal("retry overwrote manual retail")
+	}
+	db.Find(&skus)
+	for _, sku := range skus {
+		if sku.SupplyPriceAmount != nil {
+			t.Fatal("migration invented supply price", sku)
+		}
+	}
+}
+
+func TestRemoveSuggestedSalePriceSQLite(t *testing.T) {
+	testRemoveSuggestedSalePrice(t, setupRegistryMigrationTestDB(t))
+}
+
+func TestRemoveSuggestedSalePricePostgres(t *testing.T) {
+	dsn := os.Getenv("TEST_POSTGRES_DSN")
+	if dsn == "" {
+		t.Skip("TEST_POSTGRES_DSN is empty")
+	}
+	base, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	schema := fmt.Sprintf("remove_suggested_sale_price_%d", time.Now().UnixNano())
+	if err := base.Exec("CREATE SCHEMA " + schema).Error; err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		base.Exec("DROP SCHEMA " + schema + " CASCADE")
+		conn, _ := base.DB()
+		conn.Close()
+	})
+	db, err := gorm.Open(postgres.Open(dsn+" search_path="+schema), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { conn, _ := db.DB(); conn.Close() })
+	testRemoveSuggestedSalePrice(t, db)
+}
+
+func testRemoveSuggestedSalePrice(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	for _, sql := range []string{
+		`CREATE TABLE product_skus (id INTEGER PRIMARY KEY, supply_price_amount DECIMAL(20,2), min_sale_price_amount DECIMAL(20,2), suggested_sale_price_amount DECIMAL(20,2), price_amount DECIMAL(20,2), cost_price_amount DECIMAL(20,2), manual_stock_total INTEGER)`,
+		`CREATE INDEX idx_sku_supply ON product_skus (supply_price_amount)`,
+		`CREATE TABLE linked_skus (sku_id INTEGER REFERENCES product_skus(id))`,
+		`INSERT INTO product_skus VALUES (1, 80.01, 85, 100, 120, 60, 7)`,
+		`INSERT INTO linked_skus VALUES (1)`,
+	} {
+		if err := db.Exec(sql).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	sql, err := os.ReadFile("../../../../deploy/migrations/remove_suggested_sale_price.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(string(sql)).Error; err != nil {
+		t.Fatal(err)
+	}
+	if db.Migrator().HasColumn(&productdomain.ProductSKU{}, "suggested_sale_price_amount") {
+		t.Fatal("suggested price column still exists")
+	}
+	if !db.Migrator().HasIndex(&productdomain.ProductSKU{}, "idx_sku_supply") {
+		t.Fatal("removing suggested price removed an unrelated index")
+	}
+	var sku struct {
+		SupplyPriceAmount  money.Amount
+		MinSalePriceAmount money.Amount
+		PriceAmount        money.Amount
+		CostPriceAmount    money.Amount
+		ManualStockTotal   int
+	}
+	if err := db.Table("product_skus").First(&sku, "id = ?", 1).Error; err != nil {
+		t.Fatal(err)
+	}
+	if sku.SupplyPriceAmount.String() != "80.01" || sku.MinSalePriceAmount.String() != "85.00" || sku.PriceAmount.String() != "120.00" || sku.CostPriceAmount.String() != "60.00" || sku.ManualStockTotal != 7 {
+		t.Fatalf("removing suggested price changed SKU data: %+v", sku)
+	}
+	var count int64
+	if err := db.Table("linked_skus").Count(&count).Error; err != nil || count != 1 {
+		t.Fatalf("linked SKU data changed: count=%d error=%v", count, err)
+	}
+	if err := db.Exec("INSERT INTO linked_skus VALUES (2)").Error; err == nil {
+		t.Fatal("removing suggested price removed a foreign key")
 	}
 }

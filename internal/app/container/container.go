@@ -3,7 +3,6 @@ package container
 import (
 	"github.com/dujiao-next/internal/authz"
 	"github.com/dujiao-next/internal/config"
-	adproxyapp "github.com/dujiao-next/internal/modules/adproxy/application"
 	affiliateapp "github.com/dujiao-next/internal/modules/affiliate/application"
 	affiliatecontract "github.com/dujiao-next/internal/modules/affiliate/contract"
 	apicredentialapp "github.com/dujiao-next/internal/modules/apicredential/application"
@@ -169,10 +168,12 @@ type Container struct {
 	NotificationService           *notificationapp.Service
 	AffiliateService              *affiliateapp.Service
 	ResellerDomainResolver        *reseller.DomainResolver
+	ResellerDomainProvisioning    *reseller.DomainProvisioningService
 	ResellerPricingResolver       *orderapp.ResellerPricingResolver
 	ResellerManagementService     *reseller.ManagementService
 	ResellerSiteConfigService     *reseller.SiteConfigService
 	ResellerProductSettingService *reseller.ProductSettingService
+	ResellerProductImageService   *reseller.ProductImageService
 	ResellerAccountingQuery       *reseller.AccountingQueryService
 	ResellerAccountingWithdraw    *reseller.AccountingWithdrawService
 	ResellerAccountingLedger      *reseller.AccountingLedgerService
@@ -187,7 +188,6 @@ type Container struct {
 	ChannelClientService          *channelclientapp.Service
 	TelegramBroadcastService      *broadcastapp.Service
 	MemberLevelService            *memberlevelapp.Service
-	AdProxyService                *adproxyapp.Service
 	OrderRiskControlService       *orderriskapp.Service
 	ComplianceService             *complianceapp.Service
 

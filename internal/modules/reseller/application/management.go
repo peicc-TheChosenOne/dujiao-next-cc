@@ -2,6 +2,8 @@ package application
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 
@@ -13,13 +15,22 @@ import (
 
 	"github.com/dujiao-next/internal/cache"
 	"github.com/dujiao-next/internal/config"
+	"github.com/dujiao-next/internal/shared/jsonmap"
 	"github.com/dujiao-next/internal/shared/money"
 	"github.com/shopspring/decimal"
 )
 
 type ManagementService struct {
-	store resellercontract.ManagementStore
-	cfg   config.ResellerConfig
+	store              resellercontract.ManagementStore
+	cfg                config.ResellerConfig
+	domainSyncNotifier func()
+}
+
+func (s *ManagementService) SetDomainSyncNotifier(notify func()) { s.domainSyncNotifier = notify }
+func (s *ManagementService) notifyDomainSync() {
+	if s.domainSyncNotifier != nil {
+		s.domainSyncNotifier()
+	}
 }
 
 type ResellerApplyInput struct {
@@ -43,12 +54,18 @@ type ResellerSystemDomainInput struct {
 }
 
 type ResellerApproveResult struct {
-	Profile      *resellerdomain.Profile
-	SystemDomain *resellerdomain.Domain
+	Profile         *resellerdomain.Profile
+	SystemDomain    *resellerdomain.Domain
+	AlreadyApproved bool
 }
 
 func NewManagementService(store resellercontract.ManagementStore, cfg config.ResellerConfig) *ManagementService {
+	cfg.DomainBinding = domainBindingPolicy(cfg.DomainBinding)
 	return &ManagementService{store: store, cfg: cfg}
+}
+
+func (s *ManagementService) DomainBindingInfo() (bool, string) {
+	return s.cfg.DomainBinding.Enabled, s.cfg.DomainBinding.CNAMETarget
 }
 
 func (s *ManagementService) GetUserManagementSnapshot(userID uint) (*resellerdomain.Profile, []resellerdomain.Domain, bool, error) {
@@ -123,12 +140,27 @@ func (s *ManagementService) ApproveProfile(ctx context.Context, adminID, profile
 	}
 	var result *ResellerApproveResult
 	err := s.store.WithinManagementTransaction(func(repoTx resellercontract.ManagementStore) error {
-		profile, err := repoTx.GetProfileByID(profileID)
+		profile, err := repoTx.GetProfileByIDForUpdate(profileID)
 		if err != nil {
 			return err
 		}
 		if profile == nil {
 			return productcontract.ErrNotFound
+		}
+		domains, err := repoTx.ListDomainsByResellerID(profile.ID)
+		if err != nil {
+			return err
+		}
+		var systemDomain *resellerdomain.Domain
+		for i := range domains {
+			if domains[i].Type == resellerdomain.DomainTypeSubdomain {
+				systemDomain = &domains[i]
+				break
+			}
+		}
+		if profile.Status == resellerdomain.ProfileStatusActive {
+			result = &ResellerApproveResult{Profile: profile, SystemDomain: systemDomain, AlreadyApproved: true}
+			return nil
 		}
 		if profile.Status != resellerdomain.ProfileStatusPendingReview && profile.Status != resellerdomain.ProfileStatusRejected {
 			return resellercontract.ErrProfileStatusInvalid
@@ -144,7 +176,24 @@ func (s *ManagementService) ApproveProfile(ctx context.Context, adminID, profile
 		if err := repoTx.UpdateProfile(profile); err != nil {
 			return err
 		}
-		result = &ResellerApproveResult{Profile: profile}
+		if base := resellercontract.NormalizeHost(s.cfg.SubdomainBase); base != "" {
+			nextDomain := ""
+			if systemDomain != nil {
+				nextDomain = systemDomain.Domain
+			} else {
+				nextDomain, err = normalizeAndValidateSystemSubdomain(fmt.Sprintf("r%d", profile.ID), base, s.cfg)
+				if err != nil {
+					return err
+				}
+			}
+			if systemDomain == nil || systemDomain.Status != resellerdomain.DomainStatusActive || systemDomain.VerificationStatus != resellerdomain.DomainVerificationVerified {
+				systemDomain, _, err = assignSystemSubdomain(repoTx, profile.ID, nextDomain, domains)
+				if err != nil {
+					return err
+				}
+			}
+		}
+		result = &ResellerApproveResult{Profile: profile, SystemDomain: systemDomain}
 		return nil
 	})
 	if err != nil {
@@ -168,97 +217,83 @@ func (s *ManagementService) AssignSystemSubdomain(ctx context.Context, adminID, 
 	if err != nil {
 		return nil, err
 	}
-	cacheDomains := make([]string, 0, 3)
-	var updatedID uint
+	var updated *resellerdomain.Domain
+	var previousHost string
 	err = s.store.WithinManagementTransaction(func(repoTx resellercontract.ManagementStore) error {
-		profile, err := repoTx.GetProfileByID(profileID)
+		profile, err := repoTx.GetProfileByIDForUpdate(profileID)
 		if err != nil {
 			return err
 		}
 		if profile == nil {
 			return productcontract.ErrNotFound
 		}
-		existingHost, err := repoTx.FindDomainByHost(nextDomain)
-		if err != nil {
-			return err
-		}
 		domains, err := repoTx.ListDomainsByResellerID(profile.ID)
 		if err != nil {
 			return err
 		}
-		var systemDomain *resellerdomain.Domain
-		hasPrimary := false
-		for i := range domains {
-			domain := domains[i]
-			if domain.IsPrimary {
-				hasPrimary = true
-			}
-			if domain.Type == resellerdomain.DomainTypeSubdomain && systemDomain == nil {
-				copyDomain := domain
-				systemDomain = &copyDomain
-			}
+		updated, previousHost, err = assignSystemSubdomain(repoTx, profile.ID, nextDomain, domains)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	for _, domain := range []string{previousHost, updated.Domain} {
+		if domain != "" {
+			_ = cache.DelResellerDomain(ctx, domain)
 		}
-		if existingHost != nil && existingHost.ResellerID != profile.ID {
-			return resellercontract.ErrDomainConflict
+	}
+	return s.store.GetDomainByID(updated.ID)
+}
+
+func assignSystemSubdomain(repoTx resellercontract.ManagementStore, profileID uint, nextDomain string, domains []resellerdomain.Domain) (*resellerdomain.Domain, string, error) {
+	existingHost, err := repoTx.FindDomainByHost(nextDomain)
+	if err != nil {
+		return nil, "", err
+	}
+	var systemDomain *resellerdomain.Domain
+	hasPrimary := false
+	for i := range domains {
+		if domains[i].IsPrimary {
+			hasPrimary = true
 		}
-		if existingHost != nil && systemDomain != nil && existingHost.ID != systemDomain.ID {
-			return resellercontract.ErrDomainConflict
+		if domains[i].Type == resellerdomain.DomainTypeSubdomain && systemDomain == nil {
+			systemDomain = &domains[i]
 		}
-		now := time.Now()
-		shouldBePrimary := !hasPrimary || (systemDomain != nil && systemDomain.IsPrimary)
-		if systemDomain == nil {
-			row, err := repoTx.UpsertDomain(resellerdomain.Domain{
-				ResellerID:         profile.ID,
-				Domain:             nextDomain,
-				Type:               resellerdomain.DomainTypeSubdomain,
-				VerificationStatus: resellerdomain.DomainVerificationVerified,
-				Status:             resellerdomain.DomainStatusActive,
-				IsPrimary:          shouldBePrimary,
-				VerifiedAt:         &now,
-			})
-			if err != nil {
-				if strings.Contains(strings.ToLower(err.Error()), "already exists") ||
-					strings.Contains(strings.ToLower(err.Error()), "unique") ||
-					strings.Contains(strings.ToLower(err.Error()), "duplicate") {
-					return resellercontract.ErrDomainConflict
-				}
-				return err
-			}
-			updatedID = row.ID
-			cacheDomains = append(cacheDomains, row.Domain)
-			return nil
-		}
-		if systemDomain.Domain != "" {
-			cacheDomains = append(cacheDomains, systemDomain.Domain)
-		}
+	}
+	if existingHost != nil && (existingHost.ResellerID != profileID || (systemDomain != nil && existingHost.ID != systemDomain.ID)) {
+		return nil, "", resellercontract.ErrDomainConflict
+	}
+	now := time.Now()
+	shouldBePrimary := !hasPrimary || (systemDomain != nil && systemDomain.IsPrimary)
+	previousHost := ""
+	if systemDomain == nil {
+		systemDomain, err = repoTx.UpsertDomain(resellerdomain.Domain{
+			ResellerID:         profileID,
+			Domain:             nextDomain,
+			Type:               resellerdomain.DomainTypeSubdomain,
+			VerificationStatus: resellerdomain.DomainVerificationVerified,
+			Status:             resellerdomain.DomainStatusActive,
+			IsPrimary:          shouldBePrimary,
+			VerifiedAt:         &now,
+		})
+	} else {
+		previousHost = systemDomain.Domain
 		systemDomain.Domain = nextDomain
-		systemDomain.Type = resellerdomain.DomainTypeSubdomain
 		systemDomain.VerificationToken = ""
 		systemDomain.VerificationStatus = resellerdomain.DomainVerificationVerified
 		systemDomain.Status = resellerdomain.DomainStatusActive
 		systemDomain.IsPrimary = shouldBePrimary
 		systemDomain.VerifiedAt = &now
-		if err := repoTx.UpdateDomain(systemDomain); err != nil {
-			if strings.Contains(strings.ToLower(err.Error()), "already exists") ||
-				strings.Contains(strings.ToLower(err.Error()), "unique") ||
-				strings.Contains(strings.ToLower(err.Error()), "duplicate") {
-				return resellercontract.ErrDomainConflict
-			}
-			return err
-		}
-		updatedID = systemDomain.ID
-		cacheDomains = append(cacheDomains, systemDomain.Domain)
-		return nil
-	})
+		err = repoTx.UpdateDomain(systemDomain)
+	}
 	if err != nil {
-		return nil, err
-	}
-	for _, domain := range cacheDomains {
-		if domain != "" {
-			_ = cache.DelResellerDomain(ctx, domain)
+		message := strings.ToLower(err.Error())
+		if strings.Contains(message, "already exists") || strings.Contains(message, "unique") || strings.Contains(message, "duplicate") {
+			err = resellercontract.ErrDomainConflict
 		}
+		return nil, "", err
 	}
-	return s.store.GetDomainByID(updatedID)
+	return systemDomain, previousHost, nil
 }
 
 func (s *ManagementService) RejectProfile(adminID, profileID uint, reason string) (*resellerdomain.Profile, error) {
@@ -334,7 +369,10 @@ func (s *ManagementService) SubmitUserCustomDomain(userID uint, rawDomain string
 	if err != nil {
 		return nil, err
 	}
-	// 暂不启用 DNS 自动校验，自定义域名走后台人工审核。
+	if s.cfg.DomainBinding.Enabled {
+		return s.submitDomainPair(profile, strings.TrimPrefix(domain, "www."))
+	}
+	// 未配置自动接入时保留人工审核流程。
 	row, err := s.store.UpsertDomain(resellerdomain.Domain{
 		ResellerID:         profile.ID,
 		Domain:             domain,
@@ -414,7 +452,7 @@ func (s *ManagementService) updateProfileReviewStatus(adminID, profileID uint, t
 	}
 	cacheDomains := make([]string, 0, 4)
 	err := s.store.WithinManagementTransaction(func(repoTx resellercontract.ManagementStore) error {
-		profile, err := repoTx.GetProfileByID(profileID)
+		profile, err := repoTx.GetProfileByIDForUpdate(profileID)
 		if err != nil {
 			return err
 		}
@@ -445,6 +483,15 @@ func (s *ManagementService) updateProfileReviewStatus(adminID, profileID uint, t
 			if domains[i].Domain != "" {
 				cacheDomains = append(cacheDomains, domains[i].Domain)
 			}
+			if domains[i].RootDomain != "" && domains[i].SyncToken == "" {
+				domains[i].LastSyncAt = nil
+				if targetStatus == resellerdomain.ProfileStatusDisabled {
+					domains[i].ProvisioningStatus = "deleting"
+				}
+				if err := repoTx.UpdateDomain(&domains[i]); err != nil {
+					return err
+				}
+			}
 		}
 		now := time.Now()
 		profile.Status = targetStatus
@@ -463,6 +510,7 @@ func (s *ManagementService) updateProfileReviewStatus(adminID, profileID uint, t
 	for _, domain := range cacheDomains {
 		_ = cache.DelResellerDomain(context.Background(), domain)
 	}
+	s.notifyDomainSync()
 	return s.store.GetProfileByID(profileID)
 }
 
@@ -470,8 +518,18 @@ func (s *ManagementService) updateDomainStatus(ctx context.Context, adminID, dom
 	if s == nil || s.store == nil || adminID == 0 || domainID == 0 {
 		return nil, productcontract.ErrNotFound
 	}
+	preview, err := s.store.GetDomainByID(domainID)
+	if err != nil {
+		return nil, err
+	}
+	if preview != nil && preview.RootDomain != "" {
+		return s.updateDomainPairStatus(ctx, preview, targetStatus)
+	}
+	if s.cfg.DomainBinding.Enabled && targetStatus == resellerdomain.DomainStatusActive && preview != nil && preview.Type == resellerdomain.DomainTypeCustom {
+		return nil, resellercontract.ErrDomainStatusInvalid
+	}
 	cacheDomains := make([]string, 0, 4)
-	err := s.store.WithinManagementTransaction(func(repoTx resellercontract.ManagementStore) error {
+	err = s.store.WithinManagementTransaction(func(repoTx resellercontract.ManagementStore) error {
 		domain, err := repoTx.GetDomainByIDForUpdate(domainID)
 		if err != nil {
 			return err
@@ -571,6 +629,9 @@ func normalizeAndValidateCustomDomain(raw string, cfg config.ResellerConfig) (st
 		return "", resellercontract.ErrDomainInvalid
 	}
 	domain := resellercontract.NormalizeHost(trimmed)
+	if cfg.DomainBinding.Enabled && (strings.Contains(trimmed, ":") || !resellercontract.ValidProvisioningHost(domain)) {
+		return "", resellercontract.ErrDomainInvalid
+	}
 	if domain == "" {
 		return "", resellercontract.ErrDomainInvalid
 	}
@@ -641,4 +702,273 @@ func isValidResellerSubdomainLabel(label string) bool {
 		}
 	}
 	return true
+}
+
+func domainDNSRecords(root, target string) jsonmap.JSON {
+	encoded, _ := json.Marshal([]resellercontract.DomainDNSRecord{{Type: "CNAME", Name: root, Value: target}, {Type: "CNAME", Name: "www." + root, Value: target}})
+	return jsonmap.JSON{"records": json.RawMessage(encoded)}
+}
+
+func (s *ManagementService) submitDomainPair(profile *resellerdomain.Profile, root string) (*resellerdomain.Domain, error) {
+	for _, host := range []string{root, "www." + root} {
+		if _, err := normalizeAndValidateCustomDomain(host, s.cfg); err != nil {
+			return nil, err
+		}
+	}
+	var submitted *resellerdomain.Domain
+	records := domainDNSRecords(root, s.cfg.DomainBinding.CNAMETarget)
+	err := s.store.WithinManagementTransaction(func(store resellercontract.ManagementStore) error {
+		if err := store.LockDomainCapacity(); err != nil {
+			return err
+		}
+		locked, err := store.GetProfileByIDForUpdate(profile.ID)
+		if err != nil {
+			return err
+		}
+		if locked == nil || locked.Status != resellerdomain.ProfileStatusActive {
+			return resellercontract.ErrProfileInactive
+		}
+		if err := checkDomainCapacity(store, profile.ID, root, 2, s.cfg.DomainBinding); err != nil {
+			return err
+		}
+		for _, host := range []string{root, "www." + root} {
+			row, err := store.UpsertDomain(resellerdomain.Domain{ResellerID: profile.ID, Domain: host, RootDomain: root, Type: resellerdomain.DomainTypeCustom, Status: resellerdomain.DomainStatusProvisioning, VerificationStatus: resellerdomain.DomainVerificationPending, ProvisioningStatus: "connecting", DNSRecordsJSON: records})
+			if err != nil {
+				return err
+			}
+			if host == root {
+				submitted = row
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "already exists") || strings.Contains(strings.ToLower(err.Error()), "unique") || strings.Contains(strings.ToLower(err.Error()), "duplicate") {
+			return nil, resellercontract.ErrDomainConflict
+		}
+		return nil, err
+	}
+	s.notifyDomainSync()
+	return submitted, nil
+}
+
+func domainPair(rows []resellerdomain.Domain, root string) []resellerdomain.Domain {
+	pair := make([]resellerdomain.Domain, 0, 2)
+	for _, row := range rows {
+		if row.RootDomain == root && row.Type == resellerdomain.DomainTypeCustom {
+			pair = append(pair, row)
+		}
+	}
+	return pair
+}
+
+func hostnameReady(row resellerdomain.Domain) bool {
+	return row.ExternalHostnameID != "" && row.HostnameStatus == "active" && row.SSLStatus == "active" && row.ProvisioningError == ""
+}
+
+func (s *ManagementService) updateDomainPairStatus(ctx context.Context, target *resellerdomain.Domain, status string) (*resellerdomain.Domain, error) {
+	var hosts []string
+	err := s.store.WithinManagementTransaction(func(store resellercontract.ManagementStore) error {
+		profile, err := store.GetProfileByIDForUpdate(target.ResellerID)
+		if err != nil {
+			return err
+		}
+		if profile == nil {
+			return productcontract.ErrNotFound
+		}
+		rows, err := store.ListDomainsByResellerID(target.ResellerID)
+		if err != nil {
+			return err
+		}
+		pair := domainPair(rows, target.RootDomain)
+		if len(pair) != 2 {
+			return resellercontract.ErrDomainStatusInvalid
+		}
+		if status == resellerdomain.DomainStatusActive {
+			if profile.Status != resellerdomain.ProfileStatusActive {
+				return resellercontract.ErrProfileInactive
+			}
+			for _, row := range pair {
+				if row.Status != resellerdomain.DomainStatusPendingReview || row.VerificationStatus != resellerdomain.DomainVerificationVerified || !hostnameReady(row) || row.SyncToken != "" || row.LastSyncAt == nil || row.LastSyncAt.Before(time.Now().Add(-10*time.Minute)) {
+					return resellercontract.ErrDomainStatusInvalid
+				}
+			}
+		}
+		hasPrimary := hasActiveVerifiedPrimary(rows, 0)
+		lostPrimary := false
+		for i := range pair {
+			row := pair[i]
+			now := time.Now()
+			if status == resellerdomain.DomainStatusActive {
+				row.Status = status
+				row.VerifiedAt = &now
+				row.IsPrimary = !hasPrimary && row.Domain == row.RootDomain
+			} else if status == resellerdomain.DomainStatusDisabled {
+				lostPrimary = lostPrimary || row.IsPrimary
+				row.Status = status
+				row.IsPrimary = false
+				row.ProvisioningStatus = "deleting"
+				if row.SyncToken == "" {
+					row.LastSyncAt = nil
+				}
+			} else {
+				return resellercontract.ErrDomainStatusInvalid
+			}
+			if err := store.UpdateDomain(&row); err != nil {
+				return err
+			}
+			hosts = append(hosts, row.Domain)
+		}
+		if lostPrimary {
+			for _, row := range rows {
+				if row.RootDomain != target.RootDomain && row.Status == resellerdomain.DomainStatusActive && row.VerificationStatus == resellerdomain.DomainVerificationVerified {
+					row.IsPrimary = true
+					if err := store.UpdateDomain(&row); err != nil {
+						return err
+					}
+					hosts = append(hosts, row.Domain)
+					break
+				}
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	for _, host := range hosts {
+		_ = cache.DelResellerDomain(ctx, host)
+	}
+	s.notifyDomainSync()
+	return s.store.GetDomainByID(target.ID)
+}
+
+func (s *ManagementService) RefreshDomain(ctx context.Context, adminID, domainID uint) (*resellerdomain.Domain, error) {
+	if adminID == 0 {
+		return nil, productcontract.ErrNotFound
+	}
+	return s.refreshDomain(ctx, 0, domainID)
+}
+
+func (s *ManagementService) RefreshUserDomain(ctx context.Context, userID, domainID uint) (*resellerdomain.Domain, error) {
+	if userID == 0 {
+		return nil, productcontract.ErrNotFound
+	}
+	return s.refreshDomain(ctx, userID, domainID)
+}
+
+func (s *ManagementService) refreshDomain(ctx context.Context, userID, id uint) (*resellerdomain.Domain, error) {
+	if s == nil || s.store == nil || id == 0 {
+		return nil, productcontract.ErrNotFound
+	}
+	if !s.cfg.DomainBinding.Enabled {
+		return nil, resellercontract.ErrApplyDisabled
+	}
+	target, err := s.store.GetDomainByID(id)
+	if err != nil {
+		return nil, err
+	}
+	if target == nil || target.Type != resellerdomain.DomainTypeCustom {
+		return nil, productcontract.ErrNotFound
+	}
+	err = s.store.WithinManagementTransaction(func(store resellercontract.ManagementStore) error {
+		profile, err := store.GetProfileByIDForUpdate(target.ResellerID)
+		if err != nil {
+			return err
+		}
+		if profile == nil || userID != 0 && profile.UserID != userID {
+			return productcontract.ErrNotFound
+		}
+		if profile.Status != resellerdomain.ProfileStatusActive {
+			return resellercontract.ErrProfileInactive
+		}
+		row, err := store.GetDomainByIDForUpdate(id)
+		if err != nil {
+			return err
+		}
+		if row == nil {
+			return productcontract.ErrNotFound
+		}
+		if row.Status == resellerdomain.DomainStatusDisabled && (userID != 0 || row.ProvisioningStatus == "deleting") {
+			return resellercontract.ErrDomainStatusInvalid
+		}
+		rows, err := store.ListDomainsByResellerID(target.ResellerID)
+		if err != nil {
+			return err
+		}
+		for _, candidate := range domainPair(rows, row.RootDomain) {
+			if row.RootDomain != "" && candidate.Status == resellerdomain.DomainStatusDisabled && candidate.ProvisioningStatus == "deleting" {
+				return resellercontract.ErrDomainStatusInvalid
+			}
+		}
+		for _, candidate := range rows {
+			if candidate.ID != row.ID && (row.RootDomain == "" || candidate.RootDomain != row.RootDomain) {
+				continue
+			}
+			if candidate.SyncToken != "" {
+				continue
+			}
+			candidate.LastSyncAt = nil
+			if candidate.Status == resellerdomain.DomainStatusDisabled || candidate.RootDomain == "" {
+				candidate.Status = resellerdomain.DomainStatusProvisioning
+				candidate.VerificationStatus = resellerdomain.DomainVerificationPending
+				candidate.ProvisioningStatus = "connecting"
+			}
+			if err := store.UpdateDomain(&candidate); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	s.notifyDomainSync()
+	return s.store.GetDomainByID(id)
+}
+
+func domainBindingPolicy(binding config.ResellerDomainBindingConfig) config.ResellerDomainBindingConfig {
+	if binding.MaxCustomDomainsPerReseller == 0 {
+		binding.MaxCustomDomainsPerReseller = 5
+	}
+	if binding.MaxHostnames == 0 {
+		binding.MaxHostnames = 100
+	}
+	if binding.PendingExpiryHours == 0 {
+		binding.PendingExpiryHours = 168
+	}
+	if binding.SyncBatchSize == 0 {
+		binding.SyncBatchSize = 50
+	}
+	return binding
+}
+
+// 调用方必须先占用全局额度锁，额度检查与域名保留在同一事务中完成。
+func checkDomainCapacity(store resellercontract.ManagementStore, resellerID uint, root string, additional int, binding config.ResellerDomainBindingConfig) error {
+	rows, err := store.ListDomainsByResellerID(resellerID)
+	if err != nil {
+		return err
+	}
+	roots := make(map[string]bool)
+	for _, row := range rows {
+		if row.Type != resellerdomain.DomainTypeCustom || row.Status == resellerdomain.DomainStatusDisabled && row.ExternalHostnameID == "" {
+			continue
+		}
+		name := row.RootDomain
+		if name == "" {
+			name = strings.TrimPrefix(row.Domain, "www.")
+		}
+		roots[name] = true
+	}
+	if !roots[root] && len(roots) >= binding.MaxCustomDomainsPerReseller {
+		return resellercontract.ErrDomainLimit
+	}
+	count, err := store.CountReservedCustomHostnames()
+	if err != nil {
+		return err
+	}
+	if count+int64(additional) > int64(binding.MaxHostnames) {
+		return resellercontract.ErrDomainLimit
+	}
+	return nil
 }

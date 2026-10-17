@@ -1,7 +1,9 @@
 package integrationtest
 
 import (
+	"errors"
 	"fmt"
+	resellercontract "github.com/dujiao-next/internal/modules/reseller/contract"
 	"testing"
 	"time"
 
@@ -77,8 +79,8 @@ func seedResellerProductSettingServiceData(t *testing.T, db *gorm.DB) (userdomai
 		t.Fatalf("create product failed: %v", err)
 	}
 	skus := []productdomain.ProductSKU{
-		{ProductID: product.ID, SKUCode: "A", PriceAmount: money.FromDecimal(decimal.RequireFromString("100.00")), CostPriceAmount: money.FromDecimal(decimal.RequireFromString("80.00")), IsActive: true},
-		{ProductID: product.ID, SKUCode: "B", PriceAmount: money.FromDecimal(decimal.RequireFromString("200.00")), CostPriceAmount: money.FromDecimal(decimal.RequireFromString("120.00")), IsActive: true},
+		{ProductID: product.ID, SKUCode: "A", PriceAmount: money.FromDecimal(decimal.RequireFromString("100.00")), CostPriceAmount: money.FromDecimal(decimal.RequireFromString("80.00")), SupplyPriceAmount: supplyPointer("100"), IsActive: true},
+		{ProductID: product.ID, SKUCode: "B", PriceAmount: money.FromDecimal(decimal.RequireFromString("200.00")), CostPriceAmount: money.FromDecimal(decimal.RequireFromString("120.00")), SupplyPriceAmount: supplyPointer("200"), IsActive: true},
 	}
 	if err := db.Create(&skus).Error; err != nil {
 		t.Fatalf("create skus failed: %v", err)
@@ -96,19 +98,20 @@ func newResellerProductSettingServiceForTest(db *gorm.DB) *ResellerProductSettin
 
 func TestResellerProductSettingServiceUserSaveValidatesAndReturnsEffectivePrices(t *testing.T) {
 	db := openResellerProductSettingServiceTestDB(t)
-	user, _, product, skus := seedResellerProductSettingServiceData(t, db)
+	user, profile, product, skus := seedResellerProductSettingServiceData(t, db)
 	svc := newResellerProductSettingServiceForTest(db)
 
 	detail, err := svc.SaveUserProductSettings(user.ID, product.ID, ResellerProductSettingSaveInput{
 		Settings: []ResellerProductSettingInput{
-			{SKUID: 0, IsListed: true, PricingMode: resellerdomain.PricingModeMarkupPercent, MarkupPercent: decimal.RequireFromString("20.00")},
-			{SKUID: skus[0].ID, IsListed: true, PricingMode: resellerdomain.PricingModeFixedPrice, FixedPriceAmount: decimal.RequireFromString("130.00")},
+			{SKUID: 0, IsListed: true, PricingMode: resellerdomain.PricingModeInherit},
+			{SKUID: skus[0].ID, IsListed: true, PricingMode: resellerdomain.PricingModeFixedPrice, PricingRevision: resellercontract.ResolveSupplyQuote(&profile, skus[0], nil, nil).Revision, FixedPriceAmount: decimal.RequireFromString("130.00")},
+			{SKUID: skus[1].ID, IsListed: true, PricingMode: resellerdomain.PricingModeFixedPrice, FixedPriceAmount: decimal.RequireFromString("240.00"), PricingRevision: resellercontract.ResolveSupplyQuote(&profile, skus[1], nil, nil).Revision},
 		},
 	})
 	if err != nil {
 		t.Fatalf("save user settings failed: %v", err)
 	}
-	if detail == nil || detail.Product.ID != product.ID || len(detail.Settings) != 2 {
+	if detail == nil || detail.Product.ID != product.ID || len(detail.Settings) != 3 {
 		t.Fatalf("unexpected detail: %+v", detail)
 	}
 	effective := detail.EffectiveBySKUID[skus[0].ID]
@@ -117,7 +120,78 @@ func TestResellerProductSettingServiceUserSaveValidatesAndReturnsEffectivePrices
 	}
 	fallback := detail.EffectiveBySKUID[skus[1].ID]
 	if fallback.StringFixed(2) != "240.00" {
-		t.Fatalf("product markup effective price want 240.00 got %s", fallback.StringFixed(2))
+		t.Fatalf("saved SKU effective price want 240.00 got %s", fallback.StringFixed(2))
+	}
+}
+
+func TestResellerProductSettingServiceChangesVisibilityAndPriceInOneSave(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		initialListed bool
+		listed        bool
+		concurrent    bool
+	}{
+		{name: "restore_and_reprice", initialListed: false, listed: true},
+		{name: "hide_and_reprice", initialListed: true, listed: false},
+		{name: "reject_concurrent_visibility_change", initialListed: true, listed: true, concurrent: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db := openResellerProductSettingServiceTestDB(t)
+			_, profile, product, skus := seedResellerProductSettingServiceData(t, db)
+			parent := resellerdomain.ProductSetting{
+				ResellerID: profile.ID, ProductID: product.ID,
+				IsListed: true, PricingMode: resellerdomain.PricingModeInherit,
+			}
+			if err := db.Create(&parent).Error; err != nil {
+				t.Fatal(err)
+			}
+			if err := db.Model(&parent).Update("is_listed", tc.initialListed).Error; err != nil {
+				t.Fatal(err)
+			}
+			saved := resellerdomain.ProductSetting{
+				ResellerID: profile.ID, ProductID: product.ID, SKUID: skus[0].ID,
+				IsListed: true, PricingMode: resellerdomain.PricingModeFixedPrice,
+				FixedPriceAmount: money.FromDecimal(decimal.NewFromInt(120)),
+			}
+			if err := db.Create(&saved).Error; err != nil {
+				t.Fatal(err)
+			}
+			revision := resellercontract.ResolveSupplyQuote(&profile, skus[0], &parent, &saved).Revision
+			if tc.concurrent {
+				if err := db.Model(&parent).Update("is_listed", !tc.initialListed).Error; err != nil {
+					t.Fatal(err)
+				}
+			}
+			svc := newResellerProductSettingServiceForTest(db)
+			_, err := svc.SaveAdminProductSettings(profile.ID, product.ID, ResellerProductSettingSaveInput{
+				Settings: []ResellerProductSettingInput{
+					{SKUID: 0, IsListed: tc.listed, VisibilityOnly: true},
+					{SKUID: skus[0].ID, IsListed: true, PricingMode: resellerdomain.PricingModeFixedPrice,
+						FixedPriceAmount: decimal.NewFromInt(130), PricingRevision: revision},
+				},
+			})
+			if tc.concurrent {
+				if !errors.Is(err, resellercontract.ErrPricingChanged) {
+					t.Fatalf("stale revision must be rejected: %v", err)
+				}
+			} else if err != nil {
+				t.Fatalf("save visibility and price failed: %v", err)
+			}
+			var actualParent, actualSKU resellerdomain.ProductSetting
+			if err := db.First(&actualParent, parent.ID).Error; err != nil {
+				t.Fatal(err)
+			}
+			if err := db.First(&actualSKU, saved.ID).Error; err != nil {
+				t.Fatal(err)
+			}
+			wantListed, wantPrice := tc.listed, "130.00"
+			if tc.concurrent {
+				wantListed, wantPrice = !tc.initialListed, "120.00"
+			}
+			if actualParent.IsListed != wantListed || actualSKU.FixedPriceAmount.String() != wantPrice {
+				t.Fatalf("unexpected persisted values: listed=%v price=%s", actualParent.IsListed, actualSKU.FixedPriceAmount.String())
+			}
+		})
 	}
 }
 
@@ -128,7 +202,7 @@ func TestResellerProductSettingServicePersistsFirstHiddenSKUSetting(t *testing.T
 
 	detail, err := svc.SaveUserProductSettings(user.ID, product.ID, ResellerProductSettingSaveInput{
 		Settings: []ResellerProductSettingInput{
-			{SKUID: skus[0].ID, IsListed: false, PricingMode: resellerdomain.PricingModeInherit},
+			{SKUID: skus[0].ID, IsListed: false, VisibilityOnly: true},
 		},
 	})
 	if err != nil {
@@ -150,27 +224,27 @@ func TestResellerProductSettingServicePersistsFirstHiddenSKUSetting(t *testing.T
 
 func TestResellerProductSettingServiceRejectsPriceBelowBase(t *testing.T) {
 	db := openResellerProductSettingServiceTestDB(t)
-	user, _, product, skus := seedResellerProductSettingServiceData(t, db)
+	user, profile, product, skus := seedResellerProductSettingServiceData(t, db)
 	svc := newResellerProductSettingServiceForTest(db)
 
 	_, err := svc.SaveUserProductSettings(user.ID, product.ID, ResellerProductSettingSaveInput{
 		Settings: []ResellerProductSettingInput{
-			{SKUID: skus[0].ID, IsListed: true, PricingMode: resellerdomain.PricingModeFixedPrice, FixedPriceAmount: decimal.RequireFromString("99.99")},
+			{SKUID: skus[0].ID, IsListed: true, PricingMode: resellerdomain.PricingModeFixedPrice, PricingRevision: resellercontract.ResolveSupplyQuote(&profile, skus[0], nil, nil).Revision, FixedPriceAmount: decimal.RequireFromString("99.99")},
 		},
 	})
-	if err != ErrResellerPriceBelowBase {
+	if !errors.Is(err, ErrResellerPriceBelowBase) {
 		t.Fatalf("expected ErrResellerPriceBelowBase, got %v", err)
 	}
 }
 
 func TestResellerProductSettingServiceRejectsMarkupExceeded(t *testing.T) {
 	db := openResellerProductSettingServiceTestDB(t)
-	user, _, product, skus := seedResellerProductSettingServiceData(t, db)
+	user, profile, product, skus := seedResellerProductSettingServiceData(t, db)
 	svc := newResellerProductSettingServiceForTest(db)
 
 	_, err := svc.SaveUserProductSettings(user.ID, product.ID, ResellerProductSettingSaveInput{
 		Settings: []ResellerProductSettingInput{
-			{SKUID: skus[0].ID, IsListed: true, PricingMode: resellerdomain.PricingModeFixedPrice, FixedPriceAmount: decimal.RequireFromString("150.00")},
+			{SKUID: skus[0].ID, IsListed: true, PricingMode: resellerdomain.PricingModeFixedPrice, PricingRevision: resellercontract.ResolveSupplyQuote(&profile, skus[0], nil, nil).Revision, FixedPriceAmount: decimal.RequireFromString("150.00")},
 		},
 	})
 	if err != ErrResellerMarkupExceeded {
@@ -185,11 +259,11 @@ func TestResellerProductSettingServiceRejectsBatchWithoutPartialWrites(t *testin
 
 	_, err := svc.SaveUserProductSettings(user.ID, product.ID, ResellerProductSettingSaveInput{
 		Settings: []ResellerProductSettingInput{
-			{SKUID: skus[0].ID, IsListed: true, PricingMode: resellerdomain.PricingModeFixedPrice, FixedPriceAmount: decimal.RequireFromString("130.00")},
-			{SKUID: skus[1].ID, IsListed: true, PricingMode: resellerdomain.PricingModeFixedPrice, FixedPriceAmount: decimal.RequireFromString("99.99")},
+			{SKUID: skus[0].ID, IsListed: true, PricingMode: resellerdomain.PricingModeFixedPrice, PricingRevision: resellercontract.ResolveSupplyQuote(&profile, skus[0], nil, nil).Revision, FixedPriceAmount: decimal.RequireFromString("130.00")},
+			{SKUID: skus[1].ID, IsListed: true, PricingMode: resellerdomain.PricingModeFixedPrice, PricingRevision: resellercontract.ResolveSupplyQuote(&profile, skus[1], nil, nil).Revision, FixedPriceAmount: decimal.RequireFromString("99.99")},
 		},
 	})
-	if err != ErrResellerPriceBelowBase {
+	if !errors.Is(err, ErrResellerPriceBelowBase) {
 		t.Fatalf("expected ErrResellerPriceBelowBase, got %v", err)
 	}
 
@@ -220,9 +294,9 @@ func TestResellerProductSettingServicePreviewMatchesSaveSemantics(t *testing.T) 
 
 	items, err := svc.PreviewUserProductSettings(user.ID, product.ID, ResellerProductSettingSaveInput{
 		Settings: []ResellerProductSettingInput{
-			{SKUID: 0, IsListed: true, PricingMode: resellerdomain.PricingModeMarkupPercent, MarkupPercent: decimal.RequireFromString("20.00")},
-			{SKUID: skus[0].ID, IsListed: true, PricingMode: resellerdomain.PricingModeFixedPrice, FixedPriceAmount: decimal.RequireFromString("130.00")},
-			{SKUID: skus[1].ID, IsListed: true, PricingMode: resellerdomain.PricingModeInherit},
+			{SKUID: 0, IsListed: true, PricingMode: resellerdomain.PricingModeInherit},
+			{SKUID: skus[0].ID, IsListed: true, PricingMode: resellerdomain.PricingModeFixedPrice, PricingRevision: resellercontract.ResolveSupplyQuote(&profile, skus[0], nil, nil).Revision, FixedPriceAmount: decimal.RequireFromString("130.00")},
+			{SKUID: skus[1].ID, IsListed: true, PricingMode: resellerdomain.PricingModeFixedPrice, PricingRevision: resellercontract.ResolveSupplyQuote(&profile, skus[1], nil, nil).Revision, FixedPriceAmount: decimal.RequireFromString("240.00")},
 		},
 	})
 	if err != nil {
@@ -250,22 +324,22 @@ func TestResellerProductSettingServicePreviewMatchesSaveSemantics(t *testing.T) 
 
 func TestResellerProductSettingServicePreviewFlagsInvalidRules(t *testing.T) {
 	db := openResellerProductSettingServiceTestDB(t)
-	user, _, product, skus := seedResellerProductSettingServiceData(t, db)
+	user, profile, product, skus := seedResellerProductSettingServiceData(t, db)
 	svc := newResellerProductSettingServiceForTest(db)
 
-	// 低于基准价 → price_invalid；超出封顶加价 → markup_exceeded。
+	// 低于基准价 → below_minimum；超出封顶加价 → markup_exceeded。
 	items, err := svc.PreviewUserProductSettings(user.ID, product.ID, ResellerProductSettingSaveInput{
 		Settings: []ResellerProductSettingInput{
-			{SKUID: skus[0].ID, IsListed: true, PricingMode: resellerdomain.PricingModeFixedPrice, FixedPriceAmount: decimal.RequireFromString("99.99")},
-			{SKUID: skus[1].ID, IsListed: true, PricingMode: resellerdomain.PricingModeFixedPrice, FixedPriceAmount: decimal.RequireFromString("300.00")},
+			{SKUID: skus[0].ID, IsListed: true, PricingMode: resellerdomain.PricingModeFixedPrice, PricingRevision: resellercontract.ResolveSupplyQuote(&profile, skus[0], nil, nil).Revision, FixedPriceAmount: decimal.RequireFromString("99.99")},
+			{SKUID: skus[1].ID, IsListed: true, PricingMode: resellerdomain.PricingModeFixedPrice, PricingRevision: resellercontract.ResolveSupplyQuote(&profile, skus[1], nil, nil).Revision, FixedPriceAmount: decimal.RequireFromString("300.00")},
 		},
 	})
 	if err != nil {
 		t.Fatalf("preview failed: %v", err)
 	}
 	skuA := findPreviewItem(items, skus[0].ID)
-	if skuA == nil || skuA.Valid || skuA.ErrorCode != "price_invalid" {
-		t.Fatalf("sku A want invalid price_invalid, got %+v", skuA)
+	if skuA == nil || skuA.Valid || skuA.ErrorCode != "below_minimum" {
+		t.Fatalf("sku A want invalid below_minimum, got %+v", skuA)
 	}
 	skuB := findPreviewItem(items, skus[1].ID)
 	if skuB == nil || skuB.Valid || skuB.ErrorCode != "markup_exceeded" {
@@ -283,5 +357,44 @@ func TestResellerProductSettingServiceRequiresActiveProfile(t *testing.T) {
 	_, _, err := svc.ListUserProductSettings(user.ID, ResellerProductSettingUserListInput{Page: 1, PageSize: 20})
 	if err != ErrResellerProfileInactive {
 		t.Fatalf("expected inactive profile, got %v product=%d", err, product.ID)
+	}
+}
+
+func supplyPointer(value string) *money.Amount {
+	amount := money.FromDecimal(decimal.RequireFromString(value))
+	return &amount
+}
+
+func TestFixedRetailPartialSavePreservesOtherRowsAndRejectsStaleQuotes(t *testing.T) {
+	db := openResellerProductSettingServiceTestDB(t)
+	sqlDB, _ := db.DB()
+	sqlDB.SetMaxOpenConns(1)
+	user, profile, product, skus := seedResellerProductSettingServiceData(t, db)
+	svc := newResellerProductSettingServiceForTest(db)
+	input := ResellerProductSettingSaveInput{Settings: []ResellerProductSettingInput{{SKUID: skus[0].ID, IsListed: true, PricingMode: resellerdomain.PricingModeFixedPrice, FixedPriceAmount: decimal.NewFromInt(130), PricingRevision: resellercontract.ResolveSupplyQuote(&profile, skus[0], nil, nil).Revision}}}
+	detail, err := svc.SaveUserProductSettings(user.ID, product.ID, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stored resellerdomain.ProductSetting
+	db.Where("sku_id = ?", skus[0].ID).First(&stored)
+	quote := resellercontract.ResolveSupplyQuote(&profile, skus[0], nil, &stored)
+	input.Settings[0].PricingRevision = quote.Revision
+	input.Settings[0].FixedPriceAmount = decimal.NewFromInt(135)
+	db.Model(&productdomain.ProductSKU{}).Where("id = ?", skus[0].ID).Update("supply_price_amount", "110")
+	if _, err := svc.SaveUserProductSettings(user.ID, product.ID, input); !errors.Is(err, resellercontract.ErrPricingChanged) {
+		t.Fatal("accepted stale quote", err)
+	}
+	if _, err := svc.SaveUserProductSettings(user.ID, product.ID, ResellerProductSettingSaveInput{Settings: []ResellerProductSettingInput{{SKUID: skus[0].ID, IsListed: false, VisibilityOnly: true}}}); err != nil {
+		t.Fatal(err)
+	}
+	db.First(&stored, stored.ID)
+	if stored.IsListed || stored.FixedPriceAmount.String() != "130.00" {
+		t.Fatal("unlisting changed retail", stored)
+	}
+	var count int64
+	db.Model(&resellerdomain.ProductSetting{}).Where("reseller_id = ? AND sku_id = ?", profile.ID, skus[1].ID).Count(&count)
+	if count != 0 {
+		t.Fatal("partial save configured another SKU", detail)
 	}
 }

@@ -41,3 +41,12 @@ type Store interface {
 	UpdateRecoveryCodes(uint, string) error
 	ClearTOTP(uint) error
 }
+
+// LoginSecurityStore atomically changes security state using the account version.
+type LoginSecurityStore interface {
+	TouchLoginIfCurrent(uint, uint64, time.Time) (bool, error)
+	UpdateResellerLoginSecurity(uint, uint64, bool, bool, uint, string, time.Time) (bool, error)
+	SetEnrollmentPending(uint, uint64, string, string, time.Time) (bool, error)
+	CommitEnrollment(uint, uint64, string, string, string, string, time.Time) (bool, error)
+	UpdateRecoveryCodesIfCurrent(uint, uint64, string, string) (bool, error)
+}

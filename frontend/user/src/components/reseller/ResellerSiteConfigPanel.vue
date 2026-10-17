@@ -35,7 +35,7 @@
     <form v-else class="space-y-5 pb-20" @submit.prevent="handleSave">
       <div class="space-y-5">
         <div class="rounded-2xl border bg-muted/30 p-2">
-          <div class="grid grid-cols-2 gap-2 lg:grid-cols-4">
+          <div class="grid grid-cols-2 gap-2 lg:grid-cols-5">
             <button
               v-for="section in siteConfigSections"
               :key="section.value"
@@ -88,6 +88,8 @@
       </section>
         </div>
 
+        <ResellerBannerSettings v-show="activeSection === 'banner'" v-model="form.banner" />
+
         <div v-show="activeSection === 'support'" class="mt-0">
       <!-- 客服联系方式 -->
       <section class="rounded-2xl border bg-card p-4 sm:p-5">
@@ -107,7 +109,7 @@
               <component :is="item.icon" class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input v-model.trim="form.support![item.key]" type="text" class="pl-9" :placeholder="item.placeholder" />
             </div>
-            <p class="mt-1.5 font-mono text-xs text-muted-foreground/80">{{ item.hint }}</p>
+            <p class="mt-1.5 text-xs text-muted-foreground/80">{{ item.hint }}</p>
           </label>
         </div>
       </section>
@@ -360,6 +362,7 @@ import {
     CircleAlert,
     CircleCheck,
     Info,
+    Image as ImageIcon,
     LifeBuoy,
     Link2,
     Lock,
@@ -372,6 +375,7 @@ import {
     Send,
     Store,
     Trash2,
+    UsersRound,
 } from 'lucide-vue-next'
 import {
     resellerAPI,
@@ -387,6 +391,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import ResellerImageField from './ResellerImageField.vue'
+import ResellerBannerSettings from './ResellerBannerSettings.vue'
 import ResellerLocaleTabs from './ResellerLocaleTabs.vue'
 // TipTap 体积较大，异步加载，进入公告编辑时才拉取对应 chunk
 const ResellerRichText = defineAsyncComponent(() => import('./ResellerRichText.vue'))
@@ -399,10 +404,12 @@ import {
     canEditResellerSiteConfig,
     normalizeFooterLinksForForm,
     normalizeLocalizedTextForForm,
+    normalizeResellerBannerForForm,
     type ResellerLocale,
 } from '../../utils/resellerSiteConfig'
 
 withDefaults(defineProps<{ embedded?: boolean }>(), { embedded: false })
+const emit = defineEmits<{ updated: [snapshot: ResellerSiteConfigSnapshotData | null] }>()
 
 const { t } = useI18n()
 const appStore = useAppStore()
@@ -419,7 +426,7 @@ const builtinNavKeys = ['blog', 'notice', 'about']
 const localeLabels: Record<string, string> = { 'zh-CN': '简体', 'zh-TW': '繁體', 'en-US': 'EN' }
 
 type SiteConfigSection = {
-    value: 'brand' | 'support' | 'content' | 'navigation'
+    value: 'brand' | 'banner' | 'support' | 'content' | 'navigation'
     label: string
     description: string
     icon: Component
@@ -431,6 +438,12 @@ const siteConfigSections = computed<SiteConfigSection[]>(() => [
         label: t('personalCenter.reseller.siteConfig.tabs.brand'),
         description: t('personalCenter.reseller.siteConfig.tabs.brandDescription'),
         icon: Store,
+    },
+    {
+        value: 'banner',
+        label: t('personalCenter.reseller.siteConfig.tabs.banner'),
+        description: t('personalCenter.reseller.siteConfig.tabs.bannerDescription'),
+        icon: ImageIcon,
     },
     {
         value: 'support',
@@ -452,12 +465,14 @@ const siteConfigSections = computed<SiteConfigSection[]>(() => [
     },
 ])
 
-const supportFields = [
-    { key: 'telegram' as const, label: 'personalCenter.reseller.siteConfig.fields.telegram', icon: Send, placeholder: 'https://telegram.me/example', hint: 'https://telegram.me/…' },
-    { key: 'whatsapp' as const, label: 'personalCenter.reseller.siteConfig.fields.whatsapp', icon: MessageCircle, placeholder: 'https://wa.me/1234567890', hint: 'https://wa.me/…' },
-    { key: 'email' as const, label: 'personalCenter.reseller.siteConfig.fields.email', icon: Mail, placeholder: 'support@example.com', hint: 'name@example.com' },
-    { key: 'support_url' as const, label: 'personalCenter.reseller.siteConfig.fields.supportUrl', icon: LifeBuoy, placeholder: 'https://example.com/support', hint: 'https://…' },
-]
+const supportFields = computed(() => [
+    { key: 'telegram' as const, label: 'personalCenter.reseller.siteConfig.fields.telegram', icon: Send, placeholder: 'https://t.me/example', hint: t('personalCenter.reseller.siteConfig.contactHints.open') },
+    { key: 'wechat' as const, label: 'personalCenter.reseller.siteConfig.fields.wechat', icon: MessageCircle, placeholder: t('personalCenter.reseller.siteConfig.fields.wechatPlaceholder'), hint: t('personalCenter.reseller.siteConfig.contactHints.copy') },
+    { key: 'qq' as const, label: 'personalCenter.reseller.siteConfig.fields.qq', icon: UsersRound, placeholder: t('personalCenter.reseller.siteConfig.fields.qqPlaceholder'), hint: t('personalCenter.reseller.siteConfig.contactHints.copy') },
+    { key: 'email' as const, label: 'personalCenter.reseller.siteConfig.fields.email', icon: Mail, placeholder: 'support@example.com', hint: t('personalCenter.reseller.siteConfig.contactHints.copy') },
+    { key: 'whatsapp' as const, label: 'personalCenter.reseller.siteConfig.fields.whatsapp', icon: MessageCircle, placeholder: 'https://wa.me/1234567890', hint: t('personalCenter.reseller.siteConfig.contactHints.open') },
+    { key: 'support_url' as const, label: 'personalCenter.reseller.siteConfig.fields.supportUrl', icon: LifeBuoy, placeholder: 'https://example.com/support', hint: t('personalCenter.reseller.siteConfig.contactHints.open') },
+])
 
 const announcementTypeOptions = [
     {
@@ -493,6 +508,7 @@ const createBlankForm = (): ResellerSiteConfigPayload => ({
     site_name: '',
     logo: '',
     favicon: '',
+    banner: normalizeResellerBannerForForm(),
     announcement: {
         enabled: false,
         type: 'info',
@@ -502,6 +518,8 @@ const createBlankForm = (): ResellerSiteConfigPayload => ({
     support: {
         telegram: '',
         whatsapp: '',
+        wechat: '',
+        qq: '',
         email: '',
         support_url: '',
     },
@@ -547,6 +565,7 @@ const assignForm = (config?: ResellerSiteConfigData) => {
         next.site_name = config.site_name || ''
         next.logo = config.logo || ''
         next.favicon = config.favicon || ''
+        next.banner = normalizeResellerBannerForForm(config.banner)
         next.announcement = {
             enabled: config.announcement?.enabled === true,
             type: config.announcement?.type || 'info',
@@ -556,6 +575,8 @@ const assignForm = (config?: ResellerSiteConfigData) => {
         next.support = {
             telegram: config.support?.telegram || '',
             whatsapp: config.support?.whatsapp || '',
+            wechat: config.support?.wechat || '',
+            qq: config.support?.qq || '',
             email: config.support?.email || '',
             support_url: config.support?.support_url || '',
         }
@@ -582,6 +603,7 @@ const loadConfig = async () => {
         const response = await resellerAPI.siteConfig()
         snapshot.value = response.data.data || null
         assignForm(snapshot.value?.config)
+        emit('updated', snapshot.value)
     } catch (err: any) {
         alert.value = {
             level: 'error',
@@ -609,6 +631,7 @@ const handleSave = async () => {
         const response = await resellerAPI.updateSiteConfig(form)
         snapshot.value = { opened: true, can_edit: true, config: response.data.data }
         assignForm(response.data.data)
+        emit('updated', snapshot.value)
         alert.value = {
             level: 'success',
             message: t('personalCenter.reseller.siteConfig.saveSuccess'),

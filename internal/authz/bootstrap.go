@@ -26,9 +26,7 @@ func BuiltinRoleSeeds() []RoleSeed {
 				{Object: "/admin/compliance/status", Action: "GET"},
 				{Object: "/admin/authz/me", Action: "GET"},
 				{Object: "/admin/2fa/status", Action: "GET"},
-				{Object: "/admin/ads/render/:slotCode", Action: "GET"},
 				{Object: "/admin/password", Action: "PUT"},                       // 所有管理员均可修改自己密码
-				{Object: "/admin/ads/impression", Action: "POST"},                // 广告曝光埋点，所有管理员可触发
 				{Object: "/admin/2fa/setup", Action: "POST"},                     // 自助绑定 2FA
 				{Object: "/admin/2fa/enable", Action: "POST"},                    // 自助启用 2FA
 				{Object: "/admin/2fa/disable", Action: "POST"},                   // 自助关闭 2FA
@@ -158,6 +156,7 @@ func BuiltinRoleSeeds() []RoleSeed {
 				{Object: "/admin/api-credentials/:id/status", Action: "PUT"},
 				{Object: "/admin/upstream-products", Action: "GET"},
 				{Object: "/admin/upstream-categories", Action: "GET"},
+				{Object: "/admin/upstream-category-counts", Action: "GET"},
 				{Object: "/admin/resellers/operations/overview", Action: "GET"},
 				{Object: "/admin/resellers/profiles", Action: "GET"},
 				{Object: "/admin/resellers/profiles/:id", Action: "GET"},
@@ -167,12 +166,19 @@ func BuiltinRoleSeeds() []RoleSeed {
 				{Object: "/admin/resellers/profiles/:id/reject", Action: "POST"},
 				{Object: "/admin/resellers/domains", Action: "GET"},
 				{Object: "/admin/resellers/domains/:id/approve", Action: "POST"},
+				{Object: "/admin/resellers/domains/:id/refresh", Action: "POST"},
 				{Object: "/admin/resellers/domains/:id/set-primary", Action: "POST"},
 				{Object: "/admin/resellers/site-configs", Action: "GET"},
 				{Object: "/admin/resellers/site-configs/:reseller_id", Action: "GET"},
 				{Object: "/admin/resellers/site-configs/:reseller_id", Action: "PUT"},
 				{Object: "/admin/resellers/site-configs/:reseller_id/reset", Action: "POST"},
 				{Object: "/admin/resellers/product-settings", Action: "GET"},
+				{Object: "/admin/resellers/product-images", Action: "GET"},
+				{Object: "/admin/resellers/product-images/:reseller_id/:product_id", Action: "GET"},
+				{Object: "/admin/resellers/product-images/:reseller_id/:product_id", Action: "PUT"},
+				{Object: "/admin/resellers/product-images/:reseller_id/:product_id/upload", Action: "POST"},
+				{Object: "/admin/resellers/product-images/:reseller_id/:product_id/detail/upload", Action: "POST"},
+				{Object: "/admin/resellers/product-images/:reseller_id/:product_id/detail", Action: "PUT"},
 				{Object: "/admin/resellers/product-settings/:reseller_id/:product_id", Action: "GET"},
 				{Object: "/admin/resellers/product-settings/:reseller_id/:product_id/preview", Action: "POST"},
 				{Object: "/admin/resellers/product-settings/:reseller_id/:product_id", Action: "PUT"},
@@ -240,6 +246,8 @@ func BuiltinRoleSeeds() []RoleSeed {
 				{Object: "/admin/settings/affiliate", Action: "*"},
 				{Object: "/admin/settings/telegram-bot", Action: "*"},
 				{Object: "/admin/settings/telegram-bot/runtime-status", Action: "GET"},
+				{Object: "/admin/resellers/profiles/:id/login-security", Action: "PUT"},
+				{Object: "/admin/resellers/profiles/:id/login-security/reset", Action: "POST"},
 				// 权限管理（仅 system_admin 可操作）
 				{Object: "/admin/authz/me", Action: "GET"},
 				{Object: "/admin/authz/roles", Action: "*"},

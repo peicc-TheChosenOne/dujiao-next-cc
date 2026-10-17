@@ -1,0 +1,63 @@
+# Cloudflare for SaaS 回源站点：分销商自有域名经 Cloudflare 回源到这里，原样把 Host 交给应用识别分销店铺。
+# 放在 nginx 的 http 上下文，替换示例证书路径后使用。主站已有的 server 块保持不变，
+# 这里用 default_server 接住主站以外的所有 Host。
+#
+# 前提：
+# - SaaS zone 的 SSL/TLS 模式为「完全」（Full）。回源时 SNI 是分销商域名，平台证书无法匹配，
+#   因此不用「完全（严格）」；源站只接受 Cloudflare 的连接来保证这段链路的安全。
+# - 下面两个 include 文件放在服务器本地，按 Cloudflare 官方公布的 IPv4/IPv6 列表生成
+#   （https://www.cloudflare.com/ips/），不要写进仓库，也不要包含任何兜底网段：
+#     cloudflare-peer.conf    每行一条 "<网段> 1;"
+#     cloudflare-realip.conf  每行一条 "set_real_ip_from <网段>;"
+# - 应用保持 reseller.trusted_forwarded_host: false，server.trusted_proxies 只信任本机。
+
+geo $realip_remote_addr $dujiao_cf_peer {
+    default 0;
+    include /etc/nginx/snippets/cloudflare-peer.conf;
+}
+
+server {
+    listen 80 default_server;
+    server_name _;
+
+    if ($dujiao_cf_peer = 0) { return 403; }
+
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl default_server;
+    server_name _;
+
+    # Cloudflare Origin CA 证书即可（「完全」模式不校验主机名）。
+    ssl_certificate /etc/nginx/tls/cloudflare-origin/fullchain.pem;
+    ssl_certificate_key /etc/nginx/tls/cloudflare-origin/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    # 可选加固：在 SaaS zone 开启 Authenticated Origin Pulls 后取消注释，
+    # 只接受出示 Cloudflare 客户端证书的回源连接。
+    # ssl_client_certificate /etc/nginx/tls/cloudflare-origin-pull-ca.pem;
+    # ssl_verify_client on;
+
+    if ($dujiao_cf_peer = 0) { return 403; }
+
+    # 只在连接来自 Cloudflare 时采信 CF-Connecting-IP，还原访客真实 IP。
+    include /etc/nginx/snippets/cloudflare-realip.conf;
+    real_ip_header CF-Connecting-IP;
+
+    client_max_body_size 50m;
+
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Host "";
+        proxy_set_header Forwarded "";
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header Connection "";
+        proxy_buffering off;
+        proxy_read_timeout 60s;
+    }
+}

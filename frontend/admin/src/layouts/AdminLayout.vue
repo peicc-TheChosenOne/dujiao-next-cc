@@ -58,6 +58,7 @@ import { useI18n } from 'vue-i18n'
 import { adminAPI } from '@/api/admin'
 import { applySiteIcon } from '@/utils/favicon'
 import { adminUrl } from '@/utils/adminBase'
+import { getImageUrl } from '@/utils/image'
 
 interface NavGroupItem {
   label: string
@@ -108,6 +109,14 @@ const authStore = useAdminAuthStore()
 const isDark = ref(false)
 const appVersion = ref('')
 const siteUrl = ref('')
+const brandSiteName = ref('AI大玩家')
+const brandSiteLogo = ref('')
+const brandInitials = computed(() => Array.from(brandSiteName.value).slice(0, 2).join(''))
+const adminTitle = computed(() => `${brandSiteName.value} ${t('admin.brand')}`)
+
+watch(adminTitle, (title) => {
+  document.title = title
+}, { immediate: true })
 
 // 版本检测与一键升级的完整交互都在 SystemUpdateDialog 内，这里只负责开关
 const updateCheckOpen = ref(false)
@@ -724,6 +733,8 @@ onMounted(() => {
   adminAPI.getPublicConfig().then((res) => {
     const payload = res.data?.data
     applySiteIcon(payload?.brand?.site_icon)
+    brandSiteName.value = String(payload?.brand?.site_name || '').trim() || 'AI大玩家'
+    brandSiteLogo.value = getImageUrl(String(payload?.brand?.site_logo || '').trim())
     const ver = payload?.app_version
     if (typeof ver === 'string') {
       appVersion.value = ver
@@ -749,11 +760,15 @@ onBeforeUnmount(() => {
         :class="sidebarCollapsed ? 'w-16' : 'w-64'"
       >
         <div class="py-6" :class="sidebarCollapsed ? 'px-2' : 'px-6'">
-          <div v-if="!sidebarCollapsed" class="text-xl font-semibold tracking-tight">
-            {{ t('admin.brand') }}
+          <div v-if="!sidebarCollapsed" class="flex items-center gap-2 text-xl font-semibold tracking-tight">
+            <img v-if="brandSiteLogo" :src="brandSiteLogo" :alt="brandSiteName" class="h-8 w-8 shrink-0 object-contain" />
+            <span class="min-w-0 truncate" :title="adminTitle">{{ adminTitle }}</span>
           </div>
           <div v-if="!sidebarCollapsed" class="text-xs text-muted-foreground mt-1">{{ t('admin.layout.controlRoom') }}</div>
-          <div v-if="sidebarCollapsed" class="text-lg font-semibold tracking-tight text-center">D&J</div>
+          <div v-if="sidebarCollapsed" class="text-lg font-semibold tracking-tight text-center" :title="adminTitle">
+            <img v-if="brandSiteLogo" :src="brandSiteLogo" :alt="brandSiteName" class="mx-auto h-8 w-8 object-contain" />
+            <span v-else>{{ brandInitials }}</span>
+          </div>
         </div>
         <div v-if="!sidebarCollapsed" class="px-3 pb-2">
           <Input
@@ -838,18 +853,7 @@ onBeforeUnmount(() => {
         <!-- Collapse toggle button -->
         <div class="border-t border-border">
           <div v-if="!sidebarCollapsed" class="px-6 py-3 text-[11px] text-muted-foreground space-y-1">
-            <p>© {{ new Date().getFullYear() }} Dujiao-Next <span v-if="appVersion" class="text-muted-foreground/70">{{ appVersion }}</span></p>
-            <a
-              href="https://github.com/dujiao-next"
-              target="_blank"
-              rel="noopener noreferrer"
-              class="inline-flex items-center gap-1 underline-offset-2 hover:underline"
-            >
-              <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                <path d="M12 .5C5.648.5.5 5.648.5 12c0 5.084 3.292 9.4 7.86 10.922.575.106.784-.25.784-.556 0-.273-.01-1-.016-1.962-3.197.694-3.872-1.54-3.872-1.54-.522-1.326-1.274-1.678-1.274-1.678-1.042-.713.079-.699.079-.699 1.152.081 1.758 1.183 1.758 1.183 1.024 1.755 2.688 1.248 3.343.954.104-.742.401-1.248.73-1.535-2.552-.29-5.236-1.276-5.236-5.678 0-1.254.448-2.28 1.182-3.084-.118-.29-.512-1.457.112-3.04 0 0 .964-.308 3.158 1.178a10.98 10.98 0 0 1 2.876-.387c.976.004 1.96.132 2.878.387 2.192-1.486 3.154-1.178 3.154-1.178.626 1.583.232 2.75.114 3.04.736.804 1.18 1.83 1.18 3.084 0 4.413-2.688 5.384-5.248 5.668.412.354.78 1.052.78 2.12 0 1.53-.014 2.764-.014 3.14 0 .31.206.668.79.554C20.212 21.396 23.5 17.083 23.5 12 23.5 5.648 18.352.5 12 .5Z" />
-              </svg>
-              <span>https://github.com/dujiao-next</span>
-            </a>
+            <p>© {{ new Date().getFullYear() }} {{ brandSiteName }} <span v-if="appVersion" class="text-muted-foreground/70">{{ appVersion }}</span></p>
           </div>
           <button
             type="button"
@@ -868,8 +872,9 @@ onBeforeUnmount(() => {
         <SheetContent side="left" class="w-72 p-0 flex flex-col">
           <SheetTitle class="sr-only">{{ t('admin.layout.navigation') }}</SheetTitle>
           <div class="px-6 py-6">
-            <div class="text-xl font-semibold tracking-tight">
-              {{ t('admin.brand') }}
+            <div class="flex items-center gap-2 text-xl font-semibold tracking-tight">
+              <img v-if="brandSiteLogo" :src="brandSiteLogo" :alt="brandSiteName" class="h-8 w-8 shrink-0 object-contain" />
+              <span class="min-w-0 truncate" :title="adminTitle">{{ adminTitle }}</span>
             </div>
             <div class="text-xs text-muted-foreground mt-1">{{ t('admin.layout.controlRoom') }}</div>
           </div>
@@ -927,7 +932,7 @@ onBeforeUnmount(() => {
             </div>
           </nav>
           <div class="px-6 py-4 border-t border-border text-[11px] text-muted-foreground space-y-1">
-            <p>© {{ new Date().getFullYear() }} Dujiao-Next <span v-if="appVersion" class="text-muted-foreground/70">{{ appVersion }}</span></p>
+            <p>© {{ new Date().getFullYear() }} {{ brandSiteName }} <span v-if="appVersion" class="text-muted-foreground/70">{{ appVersion }}</span></p>
           </div>
         </SheetContent>
       </Sheet>
@@ -948,7 +953,7 @@ onBeforeUnmount(() => {
               <ChevronsRight v-if="sidebarCollapsed" class="h-4 w-4" />
               <ChevronsLeft v-else class="h-4 w-4" />
             </Button>
-            <div class="text-sm text-muted-foreground hidden sm:block">{{ t('admin.layout.workspace') }}</div>
+            <div class="text-sm text-muted-foreground hidden sm:block">{{ brandSiteName }} · {{ t('admin.layout.workspace') }}</div>
           </div>
           <div class="flex items-center gap-2">
             <Select

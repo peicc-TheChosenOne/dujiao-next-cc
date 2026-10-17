@@ -12,6 +12,7 @@ project_name: dujiao-next
 # 另外 hooks 不经过 shell，`cd X && y` 这种写法必须显式包一层 sh -c 才会生效。
 before:
   hooks:
+    - python3 scripts/check-release-safety.py
     - go mod tidy
     - sh -c 'cd frontend/admin && pnpm install --frozen-lockfile'
     - sh -c 'cd frontend/user  && pnpm install --frozen-lockfile'
@@ -35,6 +36,7 @@ builds:
     ldflags:
       - -s -w -X github.com/dujiao-next/internal/version.Version={{.Tag}} -X github.com/dujiao-next/internal/version.BuildType=release
     flags:
+      - "-trimpath"
       - "-tags=release,fullstack"
     goos:
       - linux
@@ -51,6 +53,7 @@ archives:
     formats: [tar.gz]
     files:
       - ./config.yml.example
+      - ./config.private.yml.example
       - ./README.md
       - ./scripts/dujiao-next-manager.sh
     name_template: >-
@@ -99,5 +102,6 @@ release:
     ---
 
     ## 📚 Documentation（在线文档）
-    - [Installation Guide](https://dujiao-next.com/deploy/)
-    - [部署指南](https://dujiao-next.com/deploy/)
+    - [AI大玩家部署指南](https://github.com/peicc-TheChosenOne/dujiao-next-cc/blob/codex/deploy-aiccpay/deploy/README.zh.md)
+    - [版本发布与回滚流程](https://github.com/peicc-TheChosenOne/dujiao-next-cc/blob/codex/deploy-aiccpay/deploy/发布流程.zh.md)
+    - Release 包含前后台的多平台二进制；本仓库尚未发布 Docker 镜像。现有生产环境按发布标签源码构建镜像，不使用安装脚本更新 Compose 部署。

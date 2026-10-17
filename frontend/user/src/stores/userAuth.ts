@@ -21,6 +21,7 @@ export const useUserAuthStore = defineStore('user-auth', () => {
     const loading = ref(false)
 
     // 2FA 挑战中间状态（不持久化到 localStorage）
+    const challengeRequiresSetup = ref(false)
     const challengeToken = ref<string>('')
     const challengeExpiresAt = ref<string>('')
 
@@ -71,6 +72,7 @@ export const useUserAuthStore = defineStore('user-auth', () => {
     }
 
     const clearChallenge = () => {
+        challengeRequiresSetup.value = false
         challengeToken.value = ''
         challengeExpiresAt.value = ''
     }
@@ -108,6 +110,8 @@ export const useUserAuthStore = defineStore('user-auth', () => {
 
     const handleLoginResponse = (data: any): { requiresTotp: boolean } => {
         if (data?.requires_totp) {
+            clearAuth()
+            challengeRequiresSetup.value = !!data.requires_totp_setup
             challengeToken.value = data.challenge_token || ''
             challengeExpiresAt.value = data.challenge_expires_at || ''
             return { requiresTotp: true }
@@ -197,7 +201,13 @@ export const useUserAuthStore = defineStore('user-auth', () => {
         router.push(redirect)
     }
 
+    const acceptLogin = (data: any) => {
+        if (!data?.token || !data?.user) throw new Error('Invalid login response')
+        setToken(data.token); setUser(data.user); clearChallenge()
+    }
     return {
+        acceptLogin,
+        challengeRequiresSetup,
         token,
         user,
         loading,

@@ -19,6 +19,10 @@ import (
 
 const protectedSuperAdminUsername = "admin"
 
+func isProtectedSuperAdminUsername(username string) bool {
+	return strings.EqualFold(strings.TrimSpace(username), protectedSuperAdminUsername)
+}
+
 type authzCreateAdminPayload struct {
 	Username string `json:"username" binding:"required"`
 	Password string `json:"password" binding:"required"`
@@ -42,6 +46,15 @@ func (h *AdminHandler) CreateAuthzAdmin(c *gin.Context) {
 	username, err := normalizeAdminUsername(req.Username)
 	if err != nil {
 		ginutil.RespondError(c, response.CodeBadRequest, "error.admin_username_invalid", err)
+		return
+	}
+	isSuper := req.IsSuper != nil && *req.IsSuper
+	if isProtectedSuperAdminUsername(username) {
+		isSuper = true
+	}
+	// 只有超管能创建超管，否则拥有权限管理的 system_admin 可借此自我提权
+	if isSuper && !ginutil.IsSuperAdmin(c) {
+		ginutil.RespondError(c, response.CodeForbidden, "error.forbidden", nil)
 		return
 	}
 	password := strings.TrimSpace(req.Password)
@@ -73,11 +86,6 @@ func (h *AdminHandler) CreateAuthzAdmin(c *gin.Context) {
 	if err != nil {
 		ginutil.RespondError(c, response.CodeInternal, "error.admin_create_failed", err)
 		return
-	}
-
-	isSuper := req.IsSuper != nil && *req.IsSuper
-	if strings.EqualFold(username, protectedSuperAdminUsername) {
-		isSuper = true
 	}
 
 	admin := &admindomain.Admin{
@@ -140,6 +148,7 @@ func (h *AdminHandler) UpdateAuthzAdmin(c *gin.Context) {
 	}
 
 	updatedFields := make([]string, 0, 3)
+	targetWasSuper := admin.IsSuper || isProtectedSuperAdminUsername(admin.Username)
 
 	if req.Username != nil {
 		normalizedUsername, err := normalizeAdminUsername(*req.Username)
@@ -171,6 +180,13 @@ func (h *AdminHandler) UpdateAuthzAdmin(c *gin.Context) {
 			admin.IsSuper = nextIsSuper
 			updatedFields = append(updatedFields, "is_super")
 		}
+	}
+
+	// 超管账号及超管身份只能由超管改动：否则 system_admin 可给自己授予超管、
+	// 改名占用受保护用户名，或直接改掉超管密码
+	if !ginutil.IsSuperAdmin(c) && (targetWasSuper || admin.IsSuper || isProtectedSuperAdminUsername(admin.Username)) {
+		ginutil.RespondError(c, response.CodeForbidden, "error.forbidden", nil)
+		return
 	}
 
 	if req.Password != nil {
@@ -262,6 +278,10 @@ func (h *AdminHandler) DeleteAuthzAdmin(c *gin.Context) {
 	}
 	if strings.EqualFold(strings.TrimSpace(admin.Username), protectedSuperAdminUsername) {
 		ginutil.RespondError(c, response.CodeBadRequest, "error.admin_delete_protected", nil)
+		return
+	}
+	if admin.IsSuper && !ginutil.IsSuperAdmin(c) {
+		ginutil.RespondError(c, response.CodeForbidden, "error.forbidden", nil)
 		return
 	}
 

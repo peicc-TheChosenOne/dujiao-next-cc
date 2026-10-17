@@ -6,12 +6,14 @@ import { useRoute } from 'vue-router'
 import { adminAPI } from '@/api/admin'
 import type {
   AdminResellerLocalizedText,
+  AdminResellerBannerConfig,
   AdminResellerSiteConfig,
   AdminResellerSiteConfigPayload,
 } from '@/api/types'
 import { Info, CircleCheck, CircleAlert } from 'lucide-vue-next'
 import IdCell from '@/components/IdCell.vue'
 import MediaPicker from '@/components/admin/MediaPicker.vue'
+import ResellerImagePreview from '@/components/admin/ResellerImagePreview.vue'
 import RichEditor from '@/components/RichEditor.vue'
 import ResellerLocaleSwitch from '@/components/admin/ResellerLocaleSwitch.vue'
 import { Button } from '@/components/ui/button'
@@ -36,6 +38,7 @@ import {
   getLocalizedText,
   normalizeFooterLinksForForm,
   normalizeLocalizedTextForForm,
+  normalizeResellerBannerForForm,
   type ResellerLocale,
   type ResellerLocalizedText,
 } from '@/utils/resellerSiteConfig'
@@ -44,6 +47,7 @@ type ResellerSiteConfigForm = {
   site_name: string
   logo: string
   favicon: string
+  banner: AdminResellerBannerConfig
   announcement: {
     enabled: boolean
     type: string
@@ -53,6 +57,8 @@ type ResellerSiteConfigForm = {
   support: {
     telegram: string
     whatsapp: string
+    wechat: string
+    qq: string
     email: string
     support_url: string
   }
@@ -80,6 +86,7 @@ const operatingId = ref<number | null>(null)
 const rows = ref<AdminResellerSiteConfig[]>([])
 const selectedRow = ref<AdminResellerSiteConfig | null>(null)
 const showEditor = ref(false)
+const previewImage = ref('')
 const pagination = ref({
   page: 1,
   page_size: 20,
@@ -102,7 +109,9 @@ const initFiltersFromQuery = () => {
 const pageSizeOptions = [10, 20, 50, 100]
 const navBuiltinKeys = ['blog', 'notice', 'about']
 
-const activeTab = ref<'brand' | 'announcement' | 'support' | 'seo' | 'footer' | 'nav'>('brand')
+const activeTab = ref<'brand' | 'banner' | 'announcement' | 'support' | 'seo' | 'footer' | 'nav'>('brand')
+const bannerModes = ['inherit', 'custom', 'hidden'] as const
+const bannerLinkTypes = ['none', 'internal', 'external'] as const
 const activeLocale = ref<ResellerLocale>('zh-CN')
 const localeLabels: Record<ResellerLocale, string> = {
   'zh-CN': '简体',
@@ -119,6 +128,7 @@ const createBlankForm = (): ResellerSiteConfigForm => ({
   site_name: '',
   logo: '',
   favicon: '',
+  banner: normalizeResellerBannerForForm(),
   announcement: {
     enabled: false,
     type: 'info',
@@ -128,6 +138,8 @@ const createBlankForm = (): ResellerSiteConfigForm => ({
   support: {
     telegram: '',
     whatsapp: '',
+    wechat: '',
+    qq: '',
     email: '',
     support_url: '',
   },
@@ -176,6 +188,7 @@ const normalizeConfigForForm = (row: AdminResellerSiteConfig): ResellerSiteConfi
     site_name: row.site_name || '',
     logo: row.logo || '',
     favicon: row.favicon || '',
+    banner: normalizeResellerBannerForForm(row.banner),
     announcement: {
       enabled: announcement.enabled === true,
       type: String(announcement.type || 'info'),
@@ -185,6 +198,8 @@ const normalizeConfigForForm = (row: AdminResellerSiteConfig): ResellerSiteConfi
     support: {
       telegram: String(support.telegram || ''),
       whatsapp: String(support.whatsapp || ''),
+      wechat: String(support.wechat || ''),
+      qq: String(support.qq || ''),
       email: String(support.email || ''),
       support_url: String(support.support_url || ''),
     },
@@ -203,6 +218,13 @@ const buildPayload = (): AdminResellerSiteConfigPayload => ({
   site_name: form.site_name.trim(),
   logo: form.logo.trim(),
   favicon: form.favicon.trim(),
+  banner: {
+    ...form.banner,
+    image: form.banner.image.trim(),
+    mobile_image: form.banner.mobile_image.trim(),
+    link_value: form.banner.link_type === 'none' ? '' : form.banner.link_value.trim(),
+    open_in_new_tab: form.banner.link_type !== 'none' && form.banner.open_in_new_tab,
+  },
   announcement: {
     enabled: form.announcement.enabled,
     type: form.announcement.type.trim() || 'info',
@@ -212,6 +234,8 @@ const buildPayload = (): AdminResellerSiteConfigPayload => ({
   support: {
     telegram: form.support.telegram.trim(),
     whatsapp: form.support.whatsapp.trim(),
+    wechat: form.support.wechat.trim(),
+    qq: form.support.qq.trim(),
     email: form.support.email.trim(),
     support_url: form.support.support_url.trim(),
   },
@@ -233,7 +257,7 @@ const buildPayload = (): AdminResellerSiteConfigPayload => ({
       notice: form.nav_config.builtin.notice !== false,
       about: form.nav_config.builtin.about !== false,
     },
-    custom_items: [],
+    custom_items: selectedRow.value?.nav_config?.custom_items || [],
   },
 })
 
@@ -277,14 +301,14 @@ const changePageSize = (size: number) => {
   fetchRows(1)
 }
 
-const openEditor = async (row: AdminResellerSiteConfig) => {
+const openEditor = async (row: AdminResellerSiteConfig, tab: 'brand' | 'banner' = 'brand') => {
   operatingId.value = row.reseller_id
   try {
     const response = await adminAPI.getResellerSiteConfig(row.reseller_id)
     const latest = response.data.data as AdminResellerSiteConfig
     selectedRow.value = latest
     assignForm(normalizeConfigForForm(latest))
-    activeTab.value = 'brand'
+    activeTab.value = tab
     activeLocale.value = 'zh-CN'
     showEditor.value = true
   } catch (err: any) {
@@ -380,6 +404,7 @@ onMounted(() => {
             <TableHead class="min-w-[170px] px-6 py-3">{{ t('admin.resellerSiteConfigs.table.siteName') }}</TableHead>
             <TableHead class="min-w-[150px] px-6 py-3">{{ t('admin.resellerSiteConfigs.table.logo') }}</TableHead>
             <TableHead class="min-w-[150px] px-6 py-3">{{ t('admin.resellerSiteConfigs.table.favicon') }}</TableHead>
+            <TableHead class="min-w-[170px] px-6 py-3">{{ t('admin.resellerProductImages.bannerColumn') }}</TableHead>
             <TableHead class="min-w-[190px] px-6 py-3">{{ t('admin.resellerSiteConfigs.table.updatedAt') }}</TableHead>
             <TableHead class="min-w-[160px] px-6 py-3 text-right">{{ t('admin.resellerSiteConfigs.table.action') }}</TableHead>
           </TableRow>
@@ -387,7 +412,7 @@ onMounted(() => {
         <TableBody class="divide-y divide-border">
           <template v-if="loading">
             <TableRow v-for="n in 5" :key="n">
-              <TableCell colspan="7" class="px-6 py-4">
+              <TableCell colspan="8" class="px-6 py-4">
                 <TableSkeleton :rows="1" />
               </TableCell>
             </TableRow>
@@ -412,9 +437,18 @@ onMounted(() => {
                 <img v-if="item.favicon" :src="getImageUrl(item.favicon)" class="h-9 w-9 rounded border border-border bg-muted/30 object-contain" alt="favicon" />
                 <span v-else class="text-xs text-muted-foreground">-</span>
               </TableCell>
+              <TableCell class="px-6 py-4">
+                <div class="space-y-1">
+                  <span class="text-xs text-muted-foreground">{{ t(`admin.resellerSiteConfigs.banner.${item.banner?.mode || 'inherit'}`) }}</span>
+                  <div v-if="item.banner?.mode === 'custom'" class="flex gap-1">
+                    <button v-for="image in [...new Set([item.banner.image, item.banner.mobile_image].filter(Boolean))]" :key="image" type="button" :aria-label="t('admin.resellerProductImages.preview')" @click="previewImage = image"><img :src="getImageUrl(image)" :alt="t('admin.resellerProductImages.bannerColumn')" class="h-10 w-16 rounded border object-contain" /></button>
+                  </div>
+                </div>
+              </TableCell>
               <TableCell class="px-6 py-4 text-sm text-muted-foreground">{{ formatDate(item.updated_at) }}</TableCell>
               <TableCell class="px-6 py-4">
                 <div class="flex justify-end gap-2">
+                  <Button size="sm" variant="outline" :disabled="operatingId === item.reseller_id || !canEditResellerSiteConfig(item.profile)" @click="openEditor(item, 'banner')">{{ t('admin.resellerProductImages.bannerManage') }}</Button>
                   <Button size="sm" variant="outline" :disabled="operatingId === item.reseller_id || !canEditResellerSiteConfig(item.profile)" @click="openEditor(item)">
                     {{ t('admin.resellerSiteConfigs.actions.edit') }}
                   </Button>
@@ -426,7 +460,7 @@ onMounted(() => {
             </TableRow>
           </template>
           <TableRow v-else>
-            <TableCell colspan="7" class="px-6 py-12 text-center text-sm text-muted-foreground">
+            <TableCell colspan="8" class="px-6 py-12 text-center text-sm text-muted-foreground">
               {{ t('admin.resellerSiteConfigs.empty') }}
             </TableCell>
           </TableRow>
@@ -453,6 +487,7 @@ onMounted(() => {
         <Tabs v-model="activeTab" class="mt-2">
           <TabsList class="flex h-auto w-full flex-wrap justify-start gap-1 bg-muted/40 p-1">
             <TabsTrigger value="brand" class="flex-none">{{ t('admin.resellerSiteConfigs.editor.sections.brand') }}</TabsTrigger>
+            <TabsTrigger value="banner" class="flex-none">{{ t('admin.resellerSiteConfigs.banner.title') }}</TabsTrigger>
             <TabsTrigger value="announcement" class="flex-none">{{ t('admin.resellerSiteConfigs.editor.sections.announcement') }}</TabsTrigger>
             <TabsTrigger value="support" class="flex-none">{{ t('admin.resellerSiteConfigs.editor.sections.support') }}</TabsTrigger>
             <TabsTrigger value="seo" class="flex-none">{{ t('admin.resellerSiteConfigs.editor.sections.seo') }}</TabsTrigger>
@@ -476,6 +511,60 @@ onMounted(() => {
                 <MediaPicker v-model="form.favicon" scene="reseller" />
               </div>
             </div>
+          </TabsContent>
+
+          <TabsContent value="banner" class="mt-4 space-y-4">
+            <div class="grid gap-2">
+              <Label>{{ t('admin.resellerSiteConfigs.banner.mode') }}</Label>
+              <Select v-model="form.banner.mode">
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem v-for="mode in bannerModes" :key="mode" :value="mode">{{ t(`admin.resellerSiteConfigs.banner.${mode}`) }}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <template v-if="form.banner.mode === 'custom'">
+              <div class="grid gap-4 sm:grid-cols-2">
+                <div class="space-y-2">
+                  <Label>{{ t('admin.resellerSiteConfigs.banner.desktopImage') }}</Label>
+                  <MediaPicker v-model="form.banner.image" scene="reseller" />
+                </div>
+                <div class="space-y-2">
+                  <Label>{{ t('admin.resellerSiteConfigs.banner.mobileImage') }}</Label>
+                  <MediaPicker v-model="form.banner.mobile_image" scene="reseller" />
+                </div>
+              </div>
+              <ResellerLocaleSwitch v-model="activeLocale" :labels="localeLabels" />
+              <div class="grid gap-4 sm:grid-cols-2">
+                <div class="space-y-2">
+                  <Label>{{ t('admin.resellerSiteConfigs.banner.mainTitle') }}</Label>
+                  <Input v-model="form.banner.title[activeLocale]" :maxlength="120" />
+                </div>
+                <div class="space-y-2">
+                  <Label>{{ t('admin.resellerSiteConfigs.banner.subtitle') }}</Label>
+                  <Input v-model="form.banner.subtitle[activeLocale]" :maxlength="300" />
+                </div>
+              </div>
+              <div class="grid gap-2">
+                <Label>{{ t('admin.resellerSiteConfigs.banner.linkType') }}</Label>
+                <Select v-model="form.banner.link_type">
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem v-for="type in bannerLinkTypes" :key="type" :value="type">{{ t(`admin.resellerSiteConfigs.banner.${type}`) }}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <template v-if="form.banner.link_type !== 'none'">
+                <div class="grid gap-2">
+                  <Label>{{ t('admin.resellerSiteConfigs.banner.linkValue') }}</Label>
+                  <Input v-model="form.banner.link_value" :placeholder="form.banner.link_type === 'internal' ? '/products' : 'https://example.com'" />
+                </div>
+                <label class="flex items-center gap-2 text-sm">
+                  <Switch v-model="form.banner.open_in_new_tab" />
+                  {{ t('admin.resellerSiteConfigs.banner.openInNewTab') }}
+                </label>
+              </template>
+            </template>
           </TabsContent>
 
           <!-- 公告 -->
@@ -523,6 +612,14 @@ onMounted(() => {
             <div class="grid gap-2">
               <Label>{{ t('admin.resellerSiteConfigs.fields.whatsapp') }}</Label>
               <Input v-model="form.support.whatsapp" />
+            </div>
+            <div class="grid gap-2">
+              <Label>{{ t('admin.resellerSiteConfigs.fields.wechat') }}</Label>
+              <Input v-model="form.support.wechat" />
+            </div>
+            <div class="grid gap-2">
+              <Label>{{ t('admin.resellerSiteConfigs.fields.qq') }}</Label>
+              <Input v-model="form.support.qq" />
             </div>
             <div class="grid gap-2">
               <Label>{{ t('admin.resellerSiteConfigs.fields.email') }}</Label>
@@ -608,5 +705,6 @@ onMounted(() => {
         </div>
       </DialogScrollContent>
     </Dialog>
+    <ResellerImagePreview v-model="previewImage" />
   </div>
 </template>

@@ -49,3 +49,42 @@ func TestAmountDatabaseValueAndScanRoundTrip(t *testing.T) {
 		t.Fatalf("round trip = %q, want 123.46", decoded.String())
 	}
 }
+
+func TestOptionalQuoteAmountDistinguishesOmittedNullAndPreciseMoney(t *testing.T) {
+	previous := FromDecimal(decimal.RequireFromString("19.90"))
+	for _, tc := range []struct {
+		json    string
+		set     bool
+		value   string
+		invalid bool
+	}{
+		{`{}`, false, "19.90", false}, {`{"price":null}`, true, "", false},
+		{`{"price":"12.34"}`, true, "12.34", false}, {`{"price":12.34}`, true, "", true},
+		{`{"price":"12.345"}`, true, "", true}, {`{"price":"1000000000000000000"}`, true, "", true},
+	} {
+		var obj struct {
+			Price OptionalAmount `json:"price"`
+		}
+		err := json.Unmarshal([]byte(tc.json), &obj)
+		if tc.invalid {
+			if err == nil {
+				t.Fatalf("accepted invalid amount %s", tc.json)
+			}
+			continue
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		actual := obj.Price.Apply(&previous)
+		if obj.Price.Set != tc.set {
+			t.Fatal(tc.json)
+		}
+		if tc.value == "" {
+			if actual != nil {
+				t.Fatal(tc.json)
+			}
+		} else if actual == nil || actual.String() != tc.value {
+			t.Fatal(tc.json, actual)
+		}
+	}
+}

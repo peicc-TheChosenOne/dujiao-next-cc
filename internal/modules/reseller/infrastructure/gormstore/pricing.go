@@ -2,7 +2,11 @@ package gormstore
 
 import (
 	productdomain "github.com/dujiao-next/internal/modules/catalog/product/domain"
+	productgormstore "github.com/dujiao-next/internal/modules/catalog/product/store/gormstore"
+	resellercontract "github.com/dujiao-next/internal/modules/reseller/contract"
 	resellerdomain "github.com/dujiao-next/internal/modules/reseller/domain"
+	"gorm.io/gorm/clause"
+	"sort"
 )
 
 // ListProductSettingsForPricing 批量获取分销定价所需的商品级与 SKU 级配置。
@@ -29,48 +33,45 @@ func (r *Store) ListProductSettingsForPricing(resellerID uint, productIDs []uint
 
 // ListHiddenProductIDs 返回分销前台列表应在查询层排除的商品 ID。
 func (r *Store) ListHiddenProductIDs(resellerID uint) ([]uint, error) {
-	if resellerID == 0 {
-		return []uint{}, nil
-	}
-
-	hidden := map[uint]struct{}{}
-	var productHidden []uint
-	if err := r.db.Model(&resellerdomain.ProductSetting{}).
-		Where("reseller_id = ? AND sku_id = 0 AND is_listed = ? AND deleted_at IS NULL", resellerID, false).
-		Pluck("product_id", &productHidden).Error; err != nil {
+	profile, err := r.GetProfileByID(resellerID)
+	if err != nil {
 		return nil, err
 	}
-	for _, id := range productHidden {
-		if id != 0 {
-			hidden[id] = struct{}{}
-		}
-	}
-
-	var skuHidden []uint
-	if err := r.db.Model(&productdomain.ProductSKU{}).
-		Select("product_skus.product_id").
-		Joins(
-			"JOIN reseller_product_settings rps ON rps.product_id = product_skus.product_id AND rps.sku_id = product_skus.id AND rps.reseller_id = ? AND rps.is_listed = ? AND rps.deleted_at IS NULL",
-			resellerID,
-			false,
-		).
-		Where("product_skus.is_active = ? AND product_skus.deleted_at IS NULL", true).
-		Group("product_skus.product_id").
-		Having("COUNT(product_skus.id) = (SELECT COUNT(1) FROM product_skus ps2 WHERE ps2.product_id = product_skus.product_id AND ps2.is_active = ? AND ps2.deleted_at IS NULL)", true).
-		Pluck("product_skus.product_id", &skuHidden).Error; err != nil {
+	var products []productdomain.Product
+	if err := r.db.Select("id").Where("deleted_at IS NULL").Find(&products).Error; err != nil {
 		return nil, err
 	}
-	for _, id := range skuHidden {
-		if id != 0 {
-			hidden[id] = struct{}{}
+	var skus []productdomain.ProductSKU
+	if err := r.db.Where("deleted_at IS NULL AND is_active = ?", true).Find(&skus).Error; err != nil {
+		return nil, err
+	}
+	productIDs := make([]uint, 0, len(products))
+	for _, product := range products {
+		productIDs = append(productIDs, product.ID)
+	}
+	skuIDs := make([]uint, 0, len(skus))
+	for _, sku := range skus {
+		skuIDs = append(skuIDs, sku.ID)
+	}
+	settings, err := r.ListProductSettingsForPricing(resellerID, productIDs, skuIDs)
+	if err != nil {
+		return nil, err
+	}
+	parents, skuSettings := resellercontract.BuildSettingIndexes(settings)
+	visible := map[uint]bool{}
+	for _, sku := range skus {
+		quote := resellercontract.ResolveSupplyQuote(profile, sku, parents[sku.ProductID], skuSettings[resellercontract.SettingKey{ProductID: sku.ProductID, SKUID: sku.ID}])
+		if quote.CanSell {
+			visible[sku.ProductID] = true
 		}
 	}
-
-	ids := make([]uint, 0, len(hidden))
-	for id := range hidden {
-		ids = append(ids, id)
+	hidden := make([]uint, 0)
+	for _, product := range products {
+		if !visible[product.ID] {
+			hidden = append(hidden, product.ID)
+		}
 	}
-	return ids, nil
+	return hidden, nil
 }
 
 func uniqueUintSlice(values []uint) []uint {
@@ -90,4 +91,17 @@ func uniqueUintSlice(values []uint) []uint {
 		result = append(result, value)
 	}
 	return result
+}
+
+// LockPricingInputs serializes quote, price and visibility changes with checkout.
+func (s *Store) LockPricingInputs(resellerID uint, productIDs []uint) error {
+	ids := append([]uint(nil), productIDs...)
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	for _, id := range uniqueUintSlice(ids) {
+		if err := productgormstore.NewSKUStore(s.db).LockProduct(id); err != nil {
+			return err
+		}
+	}
+	var profile resellerdomain.Profile
+	return s.db.Clauses(clause.Locking{Strength: "UPDATE"}).Where("deleted_at IS NULL").First(&profile, resellerID).Error
 }

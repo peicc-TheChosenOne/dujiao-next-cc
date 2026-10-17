@@ -5,7 +5,11 @@ on:
     branches:
       - main
       - dev
+      - codex/dev
+      - codex/deploy-aiccpay
+      - 'codex/**'
   pull_request:
+  workflow_call:
 
 permissions:
   contents: read
@@ -15,6 +19,17 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  release-safety:
+    name: Verify release inputs
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test release safety checks
+        run: python3 -m unittest discover -s scripts/tests -p '*_test.py'
+      - name: Check source and archive allowlist
+        run: python3 scripts/check-release-safety.py
+
   installer:
     name: Verify installer
     runs-on: ubuntu-latest
@@ -86,6 +101,38 @@ jobs:
 
       - name: Build server
         run: go build ./cmd/server
+
+  reseller-domain-postgres:
+    name: Verify reseller domain capacity on PostgreSQL
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: reseller_tests
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d reseller_tests"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Check concurrent domain reservations
+        env:
+          TEST_POSTGRES_DSN: host=127.0.0.1 user=postgres password=postgres dbname=reseller_tests port=5432 sslmode=disable
+        run: >-
+          go test ./internal/modules/reseller/integrationtest
+          -run 'TestDomainGlobalCapacitySerializesConcurrentPostgresReservations|TestResellerAutoDomainConcurrentApprovalsPostgres'
+          -count=1 -v
 
   # 发布配置只在打 tag 时才会被 GoReleaser 读取，普通 CI 覆盖不到。
   # 而配置解析失败是在构建开始前就中止的，等到 tag 那一刻才发现代价最高，

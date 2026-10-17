@@ -75,12 +75,21 @@
       </div>
     </Card>
 
-    <ResellerProductSettingsPanel :embedded="true" />
+    <Card class="flex gap-2 p-2" role="tablist" :aria-label="t('resellerConsole.products.title')">
+      <Button id="product-pricing-tab" role="tab" aria-controls="product-pricing-panel" :aria-selected="activeTab === 'pricing'" :variant="activeTab === 'pricing' ? 'default' : 'ghost'" @click="activeTab = 'pricing'">{{ t('resellerConsole.products.tabs.pricing') }}</Button>
+      <Button id="product-images-tab" role="tab" aria-controls="product-images-panel" :aria-selected="activeTab === 'images'" :variant="activeTab === 'images' ? 'default' : 'ghost'" @click="activeTab = 'images'; imagesVisited = true">{{ t('resellerConsole.products.tabs.images') }}</Button>
+    </Card>
+    <div id="product-pricing-panel" v-show="activeTab === 'pricing'" role="tabpanel" aria-labelledby="product-pricing-tab">
+      <ResellerProductSettingsPanel :embedded="true" />
+    </div>
+    <div id="product-images-panel" v-show="activeTab === 'images'" role="tabpanel" aria-labelledby="product-images-tab">
+      <ResellerProductImagesPanel v-if="imagesVisited" />
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ExternalLink, Gauge, Globe, Percent, ShoppingBag, SlidersHorizontal, Tag, ToggleLeft } from 'lucide-vue-next'
 import type { ResellerDomainData } from '../../api/types'
@@ -88,6 +97,7 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import ResellerSectionHeader from '../../components/reseller-console/ResellerSectionHeader.vue'
 import ResellerProductSettingsPanel from '../personal/ResellerProductSettingsPanel.vue'
+import ResellerProductImagesPanel from '../../components/reseller/ResellerProductImagesPanel.vue'
 import { useResellerProfile } from '../../composables/reseller/useResellerProfile'
 import {
   RESELLER_DOMAIN_STATUS_ACTIVE,
@@ -95,6 +105,8 @@ import {
 } from '../../constants/reseller'
 
 const { t } = useI18n()
+const activeTab = ref<'pricing' | 'images'>('pricing')
+const imagesVisited = ref(false)
 const { snapshot, load } = useResellerProfile()
 
 const isActiveVerifiedDomain = (domain: ResellerDomainData) =>

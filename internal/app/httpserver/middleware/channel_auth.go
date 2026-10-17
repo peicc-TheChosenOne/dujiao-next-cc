@@ -82,6 +82,11 @@ func ChannelAPIAuthMiddleware(container *container.Container) gin.HandlerFunc {
 			c.Abort()
 			return
 		}
+		if !claimSignedRequest(c, "channel", client.ChannelKey, signature) {
+			response.ChannelError(c, http.StatusUnauthorized, response.CodeUnauthorized, i18n.T(i18n.ResolveLocale(c), "error.unauthorized"), "request_replayed")
+			c.Abort()
+			return
+		}
 
 		// 异步更新 last_used_at
 		now := time.Now()

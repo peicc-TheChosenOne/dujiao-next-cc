@@ -9,14 +9,16 @@ import (
 
 // ProfileListFilter 管理端分销商资料过滤条件。
 type ProfileListFilter struct {
-	Page             int
-	PageSize         int
-	UserID           uint
-	Status           string
-	SettlementStatus string
-	Keyword          string
-	CreatedFrom      *time.Time
-	CreatedTo        *time.Time
+	TwoFactorRequired string
+	TwoFactorBinding  string
+	Page              int
+	PageSize          int
+	UserID            uint
+	Status            string
+	SettlementStatus  string
+	Keyword           string
+	CreatedFrom       *time.Time
+	CreatedTo         *time.Time
 }
 
 // DomainListFilter 管理端分销商域名过滤条件。
@@ -62,8 +64,11 @@ type SiteConfigRepository interface {
 // WithinTransaction 不得向用例暴露具体数据库连接类型。
 type ManagementStore interface {
 	WithinManagementTransaction(fn func(store ManagementStore) error) error
+	LockDomainCapacity() error
+	CountReservedCustomHostnames() (int64, error)
 	GetProfileByUserID(userID uint) (*resellerdomain.Profile, error)
 	GetProfileByID(id uint) (*resellerdomain.Profile, error)
+	GetProfileByIDForUpdate(id uint) (*resellerdomain.Profile, error)
 	CreateProfile(profile *resellerdomain.Profile) error
 	UpdateProfile(profile *resellerdomain.Profile) error
 	ListDomainsByResellerID(resellerID uint) ([]resellerdomain.Domain, error)
@@ -117,6 +122,7 @@ type ProductSettingSummary struct {
 // WithinTransaction 不得向用例暴露具体数据库连接类型。
 type ProductSettingStore interface {
 	WithinProductSettingTransaction(fn func(store ProductSettingStore) error) error
+	LockPricingInputs(resellerID uint, productIDs []uint) error
 	GetProfileByUserID(userID uint) (*resellerdomain.Profile, error)
 	GetProfileByID(id uint) (*resellerdomain.Profile, error)
 	ListProductsWithSettings(filter ProductSettingListFilter) ([]ProductSettingProductRow, int64, error)
@@ -125,4 +131,31 @@ type ProductSettingStore interface {
 	DeleteSetting(resellerID, productID, skuID uint) error
 	ListAdminSettings(filter ProductSettingAdminListFilter) ([]resellerdomain.ProductSetting, int64, error)
 	SummarizeByResellerID(resellerID uint) (ProductSettingSummary, error)
+}
+
+// ProductImageReader 公开商品查询使用批量读取，避免逐商品查询。
+type ProductImageReader interface {
+	ListProductImages(resellerID uint, productIDs []uint) ([]resellerdomain.ProductImages, error)
+}
+
+type ProductImageStore interface {
+	ProductImageReader
+	GetProfileByID(id uint) (*resellerdomain.Profile, error)
+	ListAdminProductImages(filter ProductImageAdminFilter) ([]ProductImageAdminRow, int64, error)
+	GetProfileByUserID(userID uint) (*resellerdomain.Profile, error)
+	ListProductsWithSettings(filter ProductSettingListFilter) ([]ProductSettingProductRow, int64, error)
+	GetProductWithSettings(resellerID, productID uint) (*ProductSettingProductRow, error)
+	SaveProductImages(config resellerdomain.ProductImages, expectedRevision uint64) error
+}
+
+type ProductImageAdminFilter struct {
+	Page, PageSize                            int
+	ResellerID, ProductID                     uint
+	Keyword, Scope, ImageSource, DetailSource string
+}
+
+type ProductImageAdminRow struct {
+	Product productdomain.Product
+	Profile resellerdomain.Profile
+	Config  resellerdomain.ProductImages
 }

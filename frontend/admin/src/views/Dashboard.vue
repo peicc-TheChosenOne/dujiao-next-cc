@@ -9,7 +9,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { formatMoney, getLocalizedText } from '@/utils/format'
 import { formatSkuDisplayLabel } from '@/utils/sku'
 import type { AdminDashboardInventoryAlert } from '@/api/types'
-import DashboardAd from '@/components/admin/DashboardAd.vue'
 
 interface DashboardAlertItem {
   type: string
@@ -127,6 +126,7 @@ const overview = ref<DashboardOverview | null>(null)
 const trends = ref<DashboardTrends | null>(null)
 const rankings = ref<DashboardRankings | null>(null)
 const inventoryAlerts = ref<AdminDashboardInventoryAlert[]>([])
+const inventoryAlertsDisplayLimit = ref(10)
 
 const filters = reactive({
   range: '7d',
@@ -348,6 +348,18 @@ const skuSpecLabel = (item: AdminDashboardInventoryAlert) => {
   return Object.values(item.sku_spec_values).join(' / ')
 }
 
+const displayedInventoryAlerts = computed(() => {
+  return inventoryAlerts.value.slice(0, inventoryAlertsDisplayLimit.value)
+})
+
+const hasMoreInventoryAlerts = computed(() => {
+  return inventoryAlerts.value.length > inventoryAlertsDisplayLimit.value
+})
+
+const loadMoreInventoryAlerts = () => {
+  inventoryAlertsDisplayLimit.value += 10
+}
+
 const quickActions = computed(() => [
   { label: t('admin.nav.orders'), path: '/orders' },
   { label: t('admin.nav.payments'), path: '/payments' },
@@ -410,10 +422,6 @@ onMounted(() => {
 
     <div v-if="dashboardError" class="rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
       {{ dashboardError }}
-    </div>
-
-    <div class="min-w-0">
-      <DashboardAd slot-code="dashboard_top_banner" layout="banner" />
     </div>
 
     <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4 [&>*]:min-w-0">
@@ -534,10 +542,6 @@ onMounted(() => {
           <div class="mt-1 text-xs text-muted-foreground">{{ overview?.timezone || '-' }}</div>
         </CardContent>
       </Card>
-
-      <div class="min-w-0">
-        <DashboardAd slot-code="dashboard_kpi_card" layout="card" />
-      </div>
     </div>
 
     <div class="grid gap-4 xl:grid-cols-2 [&>*]:min-w-0">
@@ -678,10 +682,6 @@ onMounted(() => {
       </Card>
     </div>
 
-    <div class="min-w-0">
-      <DashboardAd slot-code="dashboard_sponsored" layout="compact" />
-    </div>
-
     <div class="grid gap-4 xl:grid-cols-2 [&>*]:min-w-0">
       <Card class="min-w-0">
         <CardHeader class="pb-2">
@@ -706,7 +706,7 @@ onMounted(() => {
           <div v-if="inventoryAlerts.length > 0" class="space-y-2">
             <div class="text-xs font-medium text-muted-foreground mb-1">{{ t('admin.dashboard.inventoryAlerts.title') }}</div>
             <div
-              v-for="(item, idx) in inventoryAlerts"
+              v-for="(item, idx) in displayedInventoryAlerts"
               :key="`inv-${item.product_id}-${item.sku_id || 0}-${idx}`"
               class="rounded-lg border border-border px-3 py-2 text-sm"
             >
@@ -728,6 +728,15 @@ onMounted(() => {
                 </div>
               </div>
             </div>
+            <Button
+              v-if="hasMoreInventoryAlerts"
+              variant="outline"
+              size="sm"
+              class="w-full mt-2"
+              @click="loadMoreInventoryAlerts"
+            >
+              {{ t('admin.dashboard.inventoryAlerts.loadMore', { count: inventoryAlerts.length - inventoryAlertsDisplayLimit }) }}
+            </Button>
           </div>
           <div v-if="(!overview || overview.alerts.length === 0) && inventoryAlerts.length === 0" class="text-sm text-muted-foreground">
             {{ t('admin.dashboard.alerts.empty') }}

@@ -66,7 +66,7 @@ func (sourceTestChallengeStore) IsRevoked(context.Context, string) bool { return
 func (sourceTestChallengeStore) BumpFails(context.Context, string) int64 {
 	return 0
 }
-func (sourceTestChallengeStore) Revoke(context.Context, string) {}
+func (sourceTestChallengeStore) Revoke(context.Context, string) bool { return true }
 
 type sourceTestLoginRecord struct {
 	source string
@@ -113,5 +113,35 @@ func TestVerifyUser2FAPreservesExternalLoginSource(t *testing.T) {
 				t.Fatalf("login status = %q", loginRecorder.records[0].status)
 			}
 		})
+	}
+}
+
+type rejectedChallengeStore struct{ sourceTestChallengeStore }
+
+func (rejectedChallengeStore) Revoke(context.Context, string) bool { return false }
+
+type observed2FAAuth struct {
+	sourceTest2FAAuth
+	completed bool
+}
+
+func (s *observed2FAAuth) CompleteLoginAfter2FA(uint, bool) (*AuthLoginResult, error) {
+	s.completed = true
+	return s.sourceTest2FAAuth.CompleteLoginAfter2FA(42, false)
+}
+func TestVerifyUser2FARejectsUnconfirmedChallengeConsumption(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	auth := &observed2FAAuth{}
+	handler := NewUser2FAHandler(sourceTestTOTPService{}, auth, rejectedChallengeStore{}, nil)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/verify", bytes.NewBufferString(`{"challenge_token":"challenge","code":"123456"}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	handler.VerifyUser2FA(c)
+	if auth.completed {
+		t.Fatal("login must not mint a JWT without confirming shared challenge consumption")
+	}
+	if w.Body.String() == "" {
+		t.Fatal("failed consumption must return an error")
 	}
 }

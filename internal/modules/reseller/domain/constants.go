@@ -17,6 +17,7 @@ const (
 	DomainVerificationFailed   = "failed"
 
 	DomainStatusPendingReview = "pending_review"
+	DomainStatusProvisioning  = "provisioning"
 	DomainStatusActive        = "active"
 	DomainStatusDisabled      = "disabled"
 

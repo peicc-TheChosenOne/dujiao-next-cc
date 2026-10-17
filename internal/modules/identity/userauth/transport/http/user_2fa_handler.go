@@ -18,6 +18,7 @@ const (
 )
 
 var (
+	ErrTOTPManaged         = errors.New("two-factor authentication is managed by the platform")
 	ErrTOTPAlreadyEnabled  = errors.New("totp already enabled")
 	ErrTOTPNotEnabled      = errors.New("totp not enabled")
 	ErrTOTPPendingExpired  = errors.New("totp pending secret expired")
@@ -28,6 +29,8 @@ var (
 
 // UserTOTPStatus 用户 2FA 状态。
 type UserTOTPStatus struct {
+	PlatformManaged        bool       `json:"platform_managed"`
+	VerificationRequired   bool       `json:"verification_required"`
 	Enabled                bool       `json:"enabled"`
 	EnabledAt              *time.Time `json:"enabled_at,omitempty"`
 	RecoveryCodesRemaining int        `json:"recovery_codes_remaining"`
@@ -51,17 +54,18 @@ type UserTOTPEnableResult struct {
 
 // UserChallengeClaims 是 transport 层挑战 token 视图。
 type UserChallengeClaims struct {
-	UserID      uint
-	JTI         string
-	RememberMe  bool
-	LoginSource string
+	TokenVersion uint64
+	UserID       uint
+	JTI          string
+	RememberMe   bool
+	LoginSource  string
 }
 
 // User2FAChallengeStore 管理挑战失败计数与撤销。
 type User2FAChallengeStore interface {
 	IsRevoked(ctx context.Context, jti string) bool
 	BumpFails(ctx context.Context, jti string) int64
-	Revoke(ctx context.Context, jti string)
+	Revoke(ctx context.Context, jti string) bool
 }
 
 // User2FATOTPService 是 2FA 绑定管理端口。
@@ -84,20 +88,25 @@ type User2FAAuthService interface {
 
 // User2FAHandler 处理用户 2FA 管理与挑战验证 HTTP 请求。
 type User2FAHandler struct {
+	enrollment UserEnrollmentService
 	totp       User2FATOTPService
 	auth       User2FAAuthService
 	challenges User2FAChallengeStore
 	recorder   LoginRecorder
 }
 
-func NewUser2FAHandler(totp User2FATOTPService, auth User2FAAuthService, challenges User2FAChallengeStore, recorder LoginRecorder) *User2FAHandler {
+func NewUser2FAHandler(totp User2FATOTPService, auth User2FAAuthService, challenges User2FAChallengeStore, recorder LoginRecorder, enrollment ...UserEnrollmentService) *User2FAHandler {
 	if totp == nil {
 		panic("user 2fa handler: totp is nil")
 	}
 	if auth == nil {
 		panic("user 2fa handler: auth is nil")
 	}
-	return &User2FAHandler{totp: totp, auth: auth, challenges: challenges, recorder: recorder}
+	h := &User2FAHandler{totp: totp, auth: auth, challenges: challenges, recorder: recorder}
+	if len(enrollment) > 0 {
+		h.enrollment = enrollment[0]
+	}
+	return h
 }
 
 func (h *User2FAHandler) recordLogin(c *gin.Context, email string, userID uint, status, failReason, source string) {
@@ -136,6 +145,8 @@ func (h *User2FAHandler) SetupUser2FA(c *gin.Context) {
 	res, err := h.totp.Setup(uid)
 	if err != nil {
 		switch {
+		case errors.Is(err, ErrTOTPManaged):
+			ginutil.RespondError(c, response.CodeForbidden, "error.totp_platform_managed", nil)
 		case errors.Is(err, ErrTOTPAlreadyEnabled):
 			ginutil.RespondError(c, response.CodeBadRequest, "error.totp_already_enabled", nil)
 		case errors.Is(err, ErrUserNotFound):
@@ -167,6 +178,8 @@ func (h *User2FAHandler) EnableUser2FA(c *gin.Context) {
 	res, err := h.totp.Enable(uid, req.Code)
 	if err != nil {
 		switch {
+		case errors.Is(err, ErrTOTPManaged):
+			ginutil.RespondError(c, response.CodeForbidden, "error.totp_platform_managed", nil)
 		case errors.Is(err, ErrTOTPAlreadyEnabled):
 			ginutil.RespondError(c, response.CodeBadRequest, "error.totp_already_enabled", nil)
 		case errors.Is(err, ErrTOTPPendingExpired):
@@ -216,6 +229,8 @@ func (h *User2FAHandler) DisableUser2FA(c *gin.Context) {
 	}
 	if err := h.totp.Disable(uid, codeArg, isRecovery); err != nil {
 		switch {
+		case errors.Is(err, ErrTOTPManaged):
+			ginutil.RespondError(c, response.CodeForbidden, "error.totp_platform_managed", nil)
 		case errors.Is(err, ErrTOTPNotEnabled):
 			ginutil.RespondError(c, response.CodeBadRequest, "error.totp_not_enabled", nil)
 		case errors.Is(err, ErrTOTPCodeInvalid):
@@ -249,6 +264,8 @@ func (h *User2FAHandler) RegenerateUser2FARecoveryCodes(c *gin.Context) {
 	codes, err := h.totp.RegenerateRecoveryCodes(uid, req.Code)
 	if err != nil {
 		switch {
+		case errors.Is(err, ErrTOTPManaged):
+			ginutil.RespondError(c, response.CodeForbidden, "error.totp_platform_managed", nil)
 		case errors.Is(err, ErrTOTPNotEnabled):
 			ginutil.RespondError(c, response.CodeBadRequest, "error.totp_not_enabled", nil)
 		case errors.Is(err, ErrTOTPCodeInvalid):
@@ -326,10 +343,18 @@ func (h *User2FAHandler) VerifyUser2FA(c *gin.Context) {
 		}
 		return
 	}
-	if h.challenges != nil {
-		h.challenges.Revoke(ctx, claims.JTI)
+	if h.challenges == nil || !h.challenges.Revoke(ctx, claims.JTI) {
+		ginutil.RespondError(c, response.CodeUnauthorized, "error.totp_challenge_invalid", nil)
+		return
 	}
-	loginRes, err := h.auth.CompleteLoginAfter2FA(claims.UserID, claims.RememberMe)
+	var loginRes *AuthLoginResult
+	if versioned, ok := h.auth.(interface {
+		CompleteChallengeLogin(*UserChallengeClaims) (*AuthLoginResult, error)
+	}); ok {
+		loginRes, err = versioned.CompleteChallengeLogin(claims)
+	} else {
+		loginRes, err = h.auth.CompleteLoginAfter2FA(claims.UserID, claims.RememberMe)
+	}
 	if err != nil {
 		ginutil.RespondError(c, response.CodeInternal, "error.login_failed", err)
 		return
@@ -341,6 +366,55 @@ func (h *User2FAHandler) VerifyUser2FA(c *gin.Context) {
 		"token":         loginRes.Token,
 		"expires_at":    loginRes.ExpiresAt.Format("2006-01-02T15:04:05Z07:00"),
 	})
+}
+
+type UserEnrollmentService interface {
+	SetupLoginEnrollment(token string) (*UserTOTPSetupResult, error)
+	CompleteLoginEnrollment(token, code string) (*AuthLoginResult, []string, error)
+}
+
+type EnrollmentRequest struct {
+	ChallengeToken string `json:"challenge_token" binding:"required"`
+	Code           string `json:"code"`
+}
+
+func (h *User2FAHandler) SetupLoginEnrollment(c *gin.Context) {
+	var req EnrollmentRequest
+	if c.ShouldBindJSON(&req) != nil || h.enrollment == nil {
+		ginutil.RespondError(c, response.CodeBadRequest, "error.bad_request", nil)
+		return
+	}
+	result, err := h.enrollment.SetupLoginEnrollment(req.ChallengeToken)
+	if err != nil {
+		ginutil.RespondError(c, response.CodeUnauthorized, "error.totp_challenge_invalid", nil)
+		return
+	}
+	c.Header("Cache-Control", "no-store")
+	response.Success(c, result)
+}
+
+func (h *User2FAHandler) CompleteLoginEnrollment(c *gin.Context) {
+	var req EnrollmentRequest
+	if c.ShouldBindJSON(&req) != nil || req.Code == "" || h.enrollment == nil {
+		ginutil.RespondError(c, response.CodeBadRequest, "error.bad_request", nil)
+		return
+	}
+	result, codes, err := h.enrollment.CompleteLoginEnrollment(req.ChallengeToken, req.Code)
+	if err != nil {
+		if errors.Is(err, ErrTOTPCodeInvalid) {
+			ginutil.RespondError(c, response.CodeBadRequest, "error.totp_code_invalid", nil)
+		} else {
+			ginutil.RespondError(c, response.CodeUnauthorized, "error.totp_challenge_invalid", nil)
+		}
+		return
+	}
+	source := result.LoginSource
+	if source == "" {
+		source = constants.LoginLogSourceWeb
+	}
+	h.recordLogin(c, result.User.Email, result.User.ID, constants.LoginLogStatusSuccess, "", source)
+	c.Header("Cache-Control", "no-store")
+	response.Success(c, gin.H{"requires_totp": false, "token": result.Token, "expires_at": result.ExpiresAt.Format(time.RFC3339), "user": userpresenter.NewUserAuthBriefResp(result.User), "recovery_codes": codes})
 }
 
 func resolvedChallengeLoginSource(claims *UserChallengeClaims) string {

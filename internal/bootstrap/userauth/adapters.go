@@ -259,7 +259,9 @@ func toUserAuthTransportLoginResult(result *userauthapp.UserLoginResult) *userau
 		return nil
 	}
 	return &userauthtransport.AuthLoginResult{
+		LoginSource:        result.LoginSource,
 		RequiresTOTP:       result.RequiresTOTP,
+		RequiresTOTPSetup:  result.RequiresTOTPSetup,
 		User:               result.User,
 		Token:              result.Token,
 		ExpiresAt:          result.ExpiresAt,
@@ -286,6 +288,7 @@ func (a userTelegramTransportAdapter) toAuthLoginResult(res *userauthapp.UserLog
 	}
 	return &userauthtransport.AuthLoginResult{
 		RequiresTOTP:       res.RequiresTOTP,
+		RequiresTOTPSetup:  res.RequiresTOTPSetup,
 		User:               res.User,
 		Token:              res.Token,
 		ExpiresAt:          res.ExpiresAt,
@@ -380,6 +383,7 @@ func (a userTelegramOIDCTransportAdapter) LoginWithTelegramOIDC(ctx context.Cont
 	}
 	return &userauthtransport.AuthLoginResult{
 		RequiresTOTP:       res.RequiresTOTP,
+		RequiresTOTPSetup:  res.RequiresTOTPSetup,
 		User:               res.User,
 		Token:              res.Token,
 		ExpiresAt:          res.ExpiresAt,
@@ -427,6 +431,7 @@ func (a userLoginTransportAdapter) LoginStep1(email, password string, rememberMe
 	}
 	return &userauthtransport.AuthLoginResult{
 		RequiresTOTP:       res.RequiresTOTP,
+		RequiresTOTPSetup:  res.RequiresTOTPSetup,
 		User:               res.User,
 		Token:              res.Token,
 		ExpiresAt:          res.ExpiresAt,
@@ -471,6 +476,8 @@ func (a user2FATOTPTransportAdapter) GetStatus(userID uint) (*userauthtransport.
 	}
 	return &userauthtransport.UserTOTPStatus{
 		Enabled:                st.Enabled,
+		PlatformManaged:        st.PlatformManaged,
+		VerificationRequired:   st.VerificationRequired,
 		EnabledAt:              st.EnabledAt,
 		RecoveryCodesRemaining: st.RecoveryCodesRemaining,
 		RecoveryCodesTotal:     st.RecoveryCodesTotal,
@@ -540,10 +547,11 @@ func (a user2FAAuthTransportAdapter) ParseUserChallengeToken(tokenString string)
 		return nil, nil
 	}
 	return &userauthtransport.UserChallengeClaims{
-		UserID:      claims.UserID,
-		JTI:         claims.JTI,
-		RememberMe:  claims.RememberMe,
-		LoginSource: claims.LoginSource,
+		UserID:       claims.UserID,
+		JTI:          claims.JTI,
+		RememberMe:   claims.RememberMe,
+		LoginSource:  claims.LoginSource,
+		TokenVersion: claims.TokenVersion,
 	}, nil
 }
 
@@ -557,6 +565,7 @@ func (a user2FAAuthTransportAdapter) CompleteLoginAfter2FA(userID uint, remember
 	}
 	return &userauthtransport.AuthLoginResult{
 		RequiresTOTP:       res.RequiresTOTP,
+		RequiresTOTPSetup:  res.RequiresTOTPSetup,
 		User:               res.User,
 		Token:              res.Token,
 		ExpiresAt:          res.ExpiresAt,
@@ -576,39 +585,26 @@ func (a user2FAAuthTransportAdapter) GetUserEmail(userID uint) (string, error) {
 	return user.Email, nil
 }
 
-// user2FAChallengeStoreAdapter 将 Redis 挑战状态适配为 transport 端口。
+// user2FAChallengeStoreAdapter 将挑战状态（Redis 优先，无 Redis 时进程内存）适配为 transport 端口。
 type user2FAChallengeStoreAdapter struct{}
 
 func (user2FAChallengeStoreAdapter) IsRevoked(ctx context.Context, jti string) bool {
-	rdb := cache.Client()
-	if rdb == nil {
-		return false
-	}
-	v, _ := rdb.Exists(ctx, challenge.RevocationKey(jti)).Result()
-	return v == 1
+	return cache.HasChallengeFlag(ctx, challenge.RevocationKey(jti))
 }
 
 func (user2FAChallengeStoreAdapter) BumpFails(ctx context.Context, jti string) int64 {
-	rdb := cache.Client()
-	if rdb == nil {
-		return 0
-	}
-	cnt, err := rdb.Incr(ctx, challenge.FailureKey(jti)).Result()
-	if err == nil && cnt == 1 {
-		_ = rdb.Expire(ctx, challenge.FailureKey(jti), challenge.TTL).Err()
-	}
-	return cnt
+	return cache.IncrChallengeCounter(ctx, challenge.FailureKey(jti), challenge.TTL)
 }
 
-func (user2FAChallengeStoreAdapter) Revoke(ctx context.Context, jti string) {
-	rdb := cache.Client()
-	if rdb == nil {
-		return
-	}
-	_ = rdb.Set(ctx, challenge.RevocationKey(jti), "1", challenge.TTL).Err()
+func (user2FAChallengeStoreAdapter) Revoke(ctx context.Context, jti string) bool {
+	return cache.SetChallengeFlag(ctx, challenge.RevocationKey(jti), challenge.TTL)
 }
 
 func mapUserAuthTransportError(err error) error {
+	if errors.Is(err, usertotpapp.ErrManaged) {
+		return userauthtransport.ErrTOTPManaged
+	}
+
 	if err == nil {
 		return nil
 	}
@@ -692,4 +688,23 @@ func mapUserAuthTransportError(err error) error {
 		}
 	}
 	return err
+}
+
+func (a user2FAAuthTransportAdapter) CompleteChallengeLogin(claims *userauthtransport.UserChallengeClaims) (*userauthtransport.AuthLoginResult, error) {
+	result, err := a.auth.CompleteLoginAfter2FAVersion(claims.UserID, claims.RememberMe, claims.TokenVersion)
+	return toUserAuthTransportLoginResult(result), mapUserAuthTransportError(err)
+}
+func (a user2FAAuthTransportAdapter) SetupLoginEnrollment(token string) (*userauthtransport.UserTOTPSetupResult, error) {
+	result, err := a.auth.SetupLoginEnrollment(token)
+	if err != nil {
+		return nil, mapUserAuthTransportError(err)
+	}
+	return &userauthtransport.UserTOTPSetupResult{Secret: result.Secret, OtpauthURL: result.OtpauthURL, ExpiresAt: result.ExpiresAt}, nil
+}
+func (a user2FAAuthTransportAdapter) CompleteLoginEnrollment(token, code string) (*userauthtransport.AuthLoginResult, []string, error) {
+	result, err := a.auth.CompleteLoginEnrollment(token, code)
+	if err != nil {
+		return nil, nil, mapUserAuthTransportError(err)
+	}
+	return toUserAuthTransportLoginResult(result.Login), result.RecoveryCodes, nil
 }

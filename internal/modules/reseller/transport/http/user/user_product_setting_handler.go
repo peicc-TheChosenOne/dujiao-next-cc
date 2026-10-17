@@ -1,6 +1,8 @@
 package userhttp
 
 import (
+	"net/http"
+	"strconv"
 	"strings"
 
 	resellermodule "github.com/dujiao-next/internal/modules/reseller/application"
@@ -11,6 +13,157 @@ import (
 
 	"github.com/gin-gonic/gin"
 )
+
+type UserProductImagesHandler struct {
+	service *resellermodule.ProductImageService
+}
+
+func NewUserProductImagesHandler(service *resellermodule.ProductImageService) *UserProductImagesHandler {
+	if service == nil {
+		panic("reseller product images handler: service is nil")
+	}
+	return &UserProductImagesHandler{service: service}
+}
+
+func (h *UserProductImagesHandler) List(c *gin.Context) {
+	uid, ok := ginutil.GetUserID(c)
+	if !ok {
+		return
+	}
+	page, size := ginutil.ParsePagination(c)
+	rows, total, err := h.service.ListUserProductImages(uid, resellermodule.ProductSettingUserListInput{Page: page, PageSize: size, Keyword: strings.TrimSpace(c.Query("keyword"))})
+	if err != nil {
+		respondUserProductImagesError(c, err)
+		return
+	}
+	result := make([]dto.ResellerProductImagesResp, 0, len(rows))
+	for _, row := range rows {
+		result = append(result, dto.NewResellerProductImagesResp(row.Product, row.Config))
+	}
+	response.SuccessWithPage(c, result, response.BuildPagination(page, size, total))
+}
+
+func (h *UserProductImagesHandler) Get(c *gin.Context) {
+	uid, ok := ginutil.GetUserID(c)
+	if !ok {
+		return
+	}
+	id, err := ginutil.ParseParamUint(c, "product_id")
+	if err != nil {
+		ginutil.RespondBindError(c, err)
+		return
+	}
+	state, err := h.service.GetUserProductImages(uid, id)
+	if err != nil {
+		respondUserProductImagesError(c, err)
+		return
+	}
+	response.Success(c, dto.NewResellerProductImagesResp(state.Product, state.Config))
+}
+
+func (h *UserProductImagesHandler) Upload(c *gin.Context) {
+	h.upload(c, false)
+}
+
+func (h *UserProductImagesHandler) UploadDetail(c *gin.Context) {
+	h.upload(c, true)
+}
+
+func (h *UserProductImagesHandler) upload(c *gin.Context, detail bool) {
+	uid, ok := ginutil.GetUserID(c)
+	if !ok {
+		return
+	}
+	id, err := ginutil.ParseParamUint(c, "product_id")
+	if err != nil {
+		ginutil.RespondBindError(c, err)
+		return
+	}
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, resellermodule.ProductImageMaxSize+64*1024)
+	file, err := c.FormFile("file")
+	if err != nil {
+		ginutil.RespondError(c, response.CodeBadRequest, "error.reseller_product_images_invalid", nil)
+		return
+	}
+	if c.Request.MultipartForm != nil {
+		defer c.Request.MultipartForm.RemoveAll()
+		if detail && len(c.Request.MultipartForm.File["file"]) != 1 {
+			ginutil.RespondError(c, response.CodeBadRequest, "error.reseller_product_images_invalid", nil)
+			return
+		}
+	}
+	revision, err := strconv.ParseUint(c.PostForm("revision"), 10, 64)
+	if err != nil {
+		ginutil.RespondBindError(c, err)
+		return
+	}
+	var state *resellermodule.ProductImageState
+	if detail {
+		state, err = h.service.UploadUserProductDetailImage(uid, id, file, revision, c.PostForm("operation_id"))
+	} else {
+		state, err = h.service.UploadUserProductImage(uid, id, file, revision, c.PostForm("operation_id"))
+	}
+	if err != nil {
+		respondUserProductImagesError(c, err)
+		return
+	}
+	response.Success(c, dto.NewResellerProductImagesResp(state.Product, state.Config))
+}
+
+func (h *UserProductImagesHandler) ResetDetail(c *gin.Context) {
+	uid, ok := ginutil.GetUserID(c)
+	if !ok {
+		return
+	}
+	id, err := ginutil.ParseParamUint(c, "product_id")
+	if err != nil {
+		ginutil.RespondBindError(c, err)
+		return
+	}
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 16*1024)
+	var req struct {
+		Revision    *uint64 `json:"revision" binding:"required"`
+		OperationID string  `json:"operation_id" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		ginutil.RespondBindError(c, err)
+		return
+	}
+	state, err := h.service.ResetUserProductDetailImage(uid, id, *req.Revision, req.OperationID)
+	if err != nil {
+		respondUserProductImagesError(c, err)
+		return
+	}
+	response.Success(c, dto.NewResellerProductImagesResp(state.Product, state.Config))
+}
+
+func (h *UserProductImagesHandler) Update(c *gin.Context) {
+	uid, ok := ginutil.GetUserID(c)
+	if !ok {
+		return
+	}
+	id, err := ginutil.ParseParamUint(c, "product_id")
+	if err != nil {
+		ginutil.RespondBindError(c, err)
+		return
+	}
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 16*1024)
+	var req struct {
+		Images      *[]string `json:"images" binding:"required"`
+		Revision    *uint64   `json:"revision" binding:"required"`
+		OperationID string    `json:"operation_id" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		ginutil.RespondBindError(c, err)
+		return
+	}
+	state, err := h.service.UpdateUserProductImages(uid, id, *req.Images, *req.Revision, req.OperationID)
+	if err != nil {
+		respondUserProductImagesError(c, err)
+		return
+	}
+	response.Success(c, dto.NewResellerProductImagesResp(state.Product, state.Config))
+}
 
 // UserProductSettingService 是用户中心分销商品配置端点所需的最小用例接口。
 type UserProductSettingService interface {

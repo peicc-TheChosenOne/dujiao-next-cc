@@ -1,25 +1,22 @@
 package application
 
 import (
+	productdomain "github.com/dujiao-next/internal/modules/catalog/product/domain"
+	resellerdomain "github.com/dujiao-next/internal/modules/reseller/domain"
 	"sort"
 
-	resellerdomain "github.com/dujiao-next/internal/modules/reseller/domain"
-
-	productdomain "github.com/dujiao-next/internal/modules/catalog/product/domain"
-
-	"github.com/dujiao-next/internal/logger"
-	resellerapplication "github.com/dujiao-next/internal/modules/reseller/application"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	ordercontract "github.com/dujiao-next/internal/modules/order/contract"
 	resellercontract "github.com/dujiao-next/internal/modules/reseller/contract"
 	"github.com/dujiao-next/internal/shared/money"
 	"github.com/shopspring/decimal"
+	"strconv"
 )
 
-const (
-	resellerRuleSourceSKU     = resellerapplication.RuleSourceSKU
-	resellerRuleSourceProduct = resellerapplication.RuleSourceProduct
-	resellerRuleSourceProfile = resellerapplication.RuleSourceProfile
-	resellerRuleSourceInherit = resellerapplication.RuleSourceInherit
-)
+const resellerRuleSourceSKU = resellercontract.RuleSourceSKU
 
 // ResellerPricingResolver resolves reseller-facing prices before order transactions.
 type ResellerPricingResolver struct {
@@ -78,14 +75,15 @@ func (r *ResellerPricingResolver) ApplyToOrderBuildResult(tenant resellercontrac
 			return nil, ErrResellerProductNotListed
 		}
 
-		baseUnit := plan.SKU.PriceAmount.Decimal.Round(2)
-		resellerUnit, rule, err := resolveResellerUnitAmount(profile, productSetting, skuSetting, baseUnit)
-		if err != nil {
+		quote := resellercontract.ResolveSupplyQuote(profile, *plan.SKU, productSetting, skuSetting)
+		if err := quote.ValidationError(); err != nil {
 			return nil, err
 		}
-		if err := validateResellerUnitAmount(profile, plan.SKU, baseUnit, resellerUnit); err != nil {
-			return nil, err
+		if !quote.CanSell || !plan.Product.IsActive {
+			return nil, ErrResellerProductNotListed
 		}
+		baseUnit := quote.Supply.Decimal
+		resellerUnit := quote.Retail.Decimal
 		quantity := decimal.NewFromInt(int64(plan.Item.Quantity))
 		baseTotal := baseUnit.Mul(quantity).Round(2)
 		resellerTotal := resellerUnit.Mul(quantity).Round(2)
@@ -119,9 +117,10 @@ func (r *ResellerPricingResolver) ApplyToOrderBuildResult(tenant resellercontrac
 			BaseTotalAmount:     baseTotal,
 			ResellerTotalAmount: resellerTotal,
 			ProfitAmount:        profit,
-			PricingMode:         rule.Mode,
-			RuleSource:          rule.Source,
-			SettingID:           rule.SettingID,
+			PricingMode:         resellerdomain.PricingModeFixedPrice,
+			RuleSource:          resellercontract.RuleSourceSKU,
+			SettingID:           &skuSetting.ID,
+			PricingRevision:     quote.Revision,
 		})
 	}
 
@@ -207,22 +206,12 @@ func (r *ResellerPricingResolver) ResolveDisplayPrices(tenant resellercontract.T
 			result.HiddenSKUIDs[sku.ID] = true
 			continue
 		}
-		price, _, err := resolveResellerUnitAmount(batch.Profile, productSetting, skuSetting, sku.PriceAmount.Decimal.Round(2))
-		if err == nil {
-			err = validateResellerUnitAmount(batch.Profile, &sku, sku.PriceAmount.Decimal.Round(2), price)
-		}
-		if err != nil {
-			// 定价配置可能在保存后因基准价/成本价/上限调整而失效；
-			// 展示路径不应整单失败，仅隐藏该 SKU 并记录告警，便于运营发现需修正的脏配置。
-			logger.Warnw("reseller_display_price_sku_hidden",
-				"reseller_id", batch.Profile.ID,
-				"product_id", product.ID,
-				"sku_id", sku.ID,
-				"error", err.Error(),
-			)
+		quote := resellercontract.ResolveSupplyQuote(batch.Profile, sku, productSetting, skuSetting)
+		if !quote.CanSell {
 			result.HiddenSKUIDs[sku.ID] = true
 			continue
 		}
+		price := quote.Retail.Decimal
 		money := money.FromDecimal(price)
 		result.SKUPrices[sku.ID] = money
 		if !result.Visible {
@@ -230,19 +219,6 @@ func (r *ResellerPricingResolver) ResolveDisplayPrices(tenant resellercontract.T
 			result.DisplaySKUID = sku.ID
 			result.DisplayPrice = money
 		}
-	}
-	if len(product.SKUs) == 0 {
-		price, _, err := resolveResellerUnitAmount(batch.Profile, productSetting, nil, product.PriceAmount.Decimal.Round(2))
-		if err != nil {
-			logger.Warnw("reseller_display_price_product_hidden",
-				"reseller_id", batch.Profile.ID,
-				"product_id", product.ID,
-				"error", err.Error(),
-			)
-			return &resellercontract.DisplayPriceResult{Visible: false, ProductID: product.ID}, nil
-		}
-		result.Visible = true
-		result.DisplayPrice = money.FromDecimal(price)
 	}
 	return result, nil
 }
@@ -276,14 +252,6 @@ func (r *ResellerPricingResolver) applySelfDealingRisk(ctx *resellercontract.Ord
 
 func buildSettingIndexes(settings []resellerdomain.ProductSetting) (map[uint]*resellerdomain.ProductSetting, map[resellercontract.SettingKey]*resellerdomain.ProductSetting) {
 	return resellercontract.BuildSettingIndexes(settings)
-}
-
-func resolveResellerUnitAmount(profile *resellerdomain.Profile, productSetting *resellerdomain.ProductSetting, skuSetting *resellerdomain.ProductSetting, baseUnit decimal.Decimal) (decimal.Decimal, resellerapplication.PricingRule, error) {
-	return resellerapplication.ResolveUnitAmount(profile, productSetting, skuSetting, baseUnit)
-}
-
-func validateResellerUnitAmount(profile *resellerdomain.Profile, sku *productdomain.ProductSKU, baseUnit decimal.Decimal, resellerUnit decimal.Decimal) error {
-	return resellerapplication.ValidateUnitAmount(profile, sku, baseUnit, resellerUnit)
 }
 
 func collectOrderPlanIDs(plans []childOrderPlan) ([]uint, []uint) {
@@ -346,4 +314,52 @@ func isResellerOrderContext(tenant resellercontract.TenantContext) bool {
 
 func resellerSnapshotDomain(tenant resellercontract.TenantContext) string {
 	return resellercontract.SnapshotDomain(tenant)
+}
+
+func (s *OrderService) pricingRevision(ctx *resellercontract.OrderPricingContext) string {
+	if ctx == nil {
+		return ""
+	}
+	data, _ := json.Marshal([]interface{}{ctx.ResellerID, ctx.Domain, ctx.Currency, ctx.BuyerUserID, ctx.ProfitEligible, ctx.ProfitBlockReason, ctx.Items})
+	mac := hmac.New(sha256.New, s.pricingSecret)
+	mac.Write(data)
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
+func (s *OrderService) confirmPricingInTransaction(tx ordercontract.Transaction, input orderCreateParams, result *orderBuildResult) (*resellercontract.OrderPricingContext, error) {
+	store, ok := tx.ResellerOrders().(resellercontract.PricingStore)
+	if !ok {
+		return nil, resellercontract.ErrPricingChanged
+	}
+	products, _ := collectOrderPlanIDs(result.Plans)
+	if err := store.LockPricingInputs(*input.Tenant.ResellerID, products); err != nil {
+		return nil, err
+	}
+	for i := range result.Plans {
+		plan := &result.Plans[i]
+		sku, err := tx.ProductSKUs().GetByID(plan.SKU.ID)
+		if err != nil {
+			return nil, err
+		}
+		if sku == nil {
+			return nil, ErrProductSKUInvalid
+		}
+		product, err := tx.Products().GetByID(strconv.FormatUint(uint64(plan.Product.ID), 10))
+		if err != nil {
+			return nil, err
+		}
+		if product == nil || !product.IsActive {
+			return nil, ErrResellerProductNotListed
+		}
+		plan.SKU = sku
+		plan.Product = product
+	}
+	ctx, err := NewResellerPricingResolver(store).ApplyToOrderBuildResult(input.Tenant, input.UserID, result)
+	if err != nil {
+		return nil, err
+	}
+	if !hmac.Equal([]byte(input.PricingRevision), []byte(s.pricingRevision(ctx))) {
+		return nil, resellercontract.ErrPricingChanged
+	}
+	return ctx, nil
 }

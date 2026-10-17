@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ResellerLoginSecurity from './components/ResellerLoginSecurity.vue'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
@@ -191,6 +192,7 @@ const settlementClass = (status?: string) => {
 }
 
 const domainStatusLabel = (status?: string) => {
+  if (status === 'provisioning') return t('admin.resellerDomains.status.provisioning')
   if (status === 'pending_review') return t('admin.resellerProfileDetail.domainStatus.pendingReview')
   if (status === 'active') return t('admin.resellerProfileDetail.domainStatus.active')
   if (status === 'disabled') return t('admin.resellerProfileDetail.domainStatus.disabled')
@@ -273,6 +275,7 @@ onMounted(fetchDetail)
       <Tabs v-model="currentTab" class="space-y-4">
         <TabsList class="h-auto flex-wrap gap-1">
           <TabsTrigger value="overview">{{ t('admin.resellerProfileDetail.tabs.overview') }}</TabsTrigger>
+          <TabsTrigger value="security">{{ t('admin.loginSecurity.title') }}</TabsTrigger>
           <TabsTrigger value="profile">{{ t('admin.resellerProfileDetail.tabs.profile') }}</TabsTrigger>
           <TabsTrigger value="domains">{{ t('admin.resellerProfileDetail.tabs.domains') }}</TabsTrigger>
           <TabsTrigger value="site">{{ t('admin.resellerProfileDetail.tabs.site') }}</TabsTrigger>
@@ -280,6 +283,7 @@ onMounted(fetchDetail)
           <TabsTrigger value="finance">{{ t('admin.resellerProfileDetail.tabs.finance') }}</TabsTrigger>
         </TabsList>
 
+        <TabsContent value="security" class="mt-0"><ResellerLoginSecurity :profile="profile" @updated="fetchDetail" /></TabsContent>
         <TabsContent value="overview" class="mt-0 space-y-4">
           <div class="grid gap-4 lg:grid-cols-3">
             <div class="rounded-xl border border-border bg-card p-4">

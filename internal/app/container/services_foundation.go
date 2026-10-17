@@ -22,6 +22,7 @@ import (
 	notificationsmtp "github.com/dujiao-next/internal/modules/notification/infrastructure/smtp"
 	orderapp "github.com/dujiao-next/internal/modules/order/application"
 	reseller "github.com/dujiao-next/internal/modules/reseller/application"
+	resellercloudflare "github.com/dujiao-next/internal/modules/reseller/infrastructure/cloudflare"
 	settingsapp "github.com/dujiao-next/internal/modules/settings/application"
 	settingsmessaging "github.com/dujiao-next/internal/modules/settings/schema/messaging"
 	settingssecurity "github.com/dujiao-next/internal/modules/settings/schema/security"
@@ -48,6 +49,15 @@ func (c *Container) initPolicyAndSettingServices() {
 	c.ResellerDomainResolver = reseller.NewDomainResolver(c.ResellerStore, c.Config.Reseller)
 	c.ResellerPricingResolver = orderapp.NewResellerPricingResolver(c.ResellerStore)
 	c.ResellerManagementService = reseller.NewManagementService(c.ResellerStore, c.Config.Reseller)
+	if binding := c.Config.Reseller.DomainBinding; binding.Enabled {
+		provider := resellercloudflare.New(binding.Cloudflare.ZoneID, binding.Cloudflare.APIToken, binding.Cloudflare.CustomOrigin, binding.MaxHostnames)
+		c.ResellerDomainProvisioning = reseller.NewDomainProvisioningService(c.ResellerStore, provider, binding)
+		c.ResellerManagementService.SetDomainSyncNotifier(func() {
+			if err := c.QueueClient.EnqueueResellerDomainProvisioning(); err != nil {
+				logger.Warnw("reseller_domain_enqueue_failed", "error", err)
+			}
+		})
+	}
 	c.ResellerSiteConfigService = reseller.NewSiteConfigService(c.ResellerStore)
 	c.ResellerProductSettingService = reseller.NewProductSettingService(c.ResellerStore, c.ProductRepo)
 	c.ResellerAccountingQuery = reseller.NewAccountingQueryService(c.ResellerStore)
@@ -110,6 +120,8 @@ func (c *Container) initIdentityAndCatalogServices() {
 	c.TelegramAuthService = telegramauthapp.NewService(c.Config.TelegramAuth, telegramauthcache.Options()...)
 	c.GoogleAuthService = googleauthapp.NewService(c.Config.GoogleAuth)
 	c.UserAuthService = userauthapp.NewService(c.Config, c.UserStore, c.ExternalIdentityStore, c.EmailVerificationStore, c.SettingService, c.EmailSender, c.TelegramAuthService)
+	c.UserAuthService.SetResellerSecurityReader(c.ResellerStore)
+	c.UserTOTPService.SetResellerSecurityReader(c.ResellerStore)
 	c.UserAuthService.SetGoogleAuthService(c.GoogleAuthService)
 	c.UserAuthService.SetGoogleRedirectStore(userauthcachestore.NewGoogleRedirectStore())
 	c.UserAuthService.SetAuthUnitOfWork(userauthgormstore.New(gormdb.DB))
@@ -121,6 +133,13 @@ func (c *Container) initIdentityAndCatalogServices() {
 		MaxWidth:          c.Config.Upload.MaxWidth,
 		MaxHeight:         c.Config.Upload.MaxHeight,
 	}, uploadlocal.New("uploads"))
+	c.ResellerProductImageService = reseller.NewProductImageService(c.ResellerStore, uploadapp.NewService(uploadapp.Policy{
+		MaxSize:           reseller.ProductImageMaxSize,
+		AllowedTypes:      []string{"image/png", "image/jpeg", "image/gif", "image/webp"},
+		AllowedExtensions: []string{".png", ".jpg", ".jpeg", ".gif", ".webp"},
+		MaxWidth:          c.Config.Upload.MaxWidth,
+		MaxHeight:         c.Config.Upload.MaxHeight,
+	}, uploadlocal.New("uploads")))
 	c.AffiliateService = affiliateapp.NewService(c.AffiliateRepo, c.UserStore, c.OrderStore, c.ProductRepo, c.SettingService)
 	productServices := catalogproductbootstrap.New(catalogproductbootstrap.Dependencies{
 		Products:          c.ProductRepo,

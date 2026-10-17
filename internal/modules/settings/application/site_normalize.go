@@ -128,6 +128,9 @@ func normalizeSiteContact(raw interface{}) map[string]interface{} {
 	result := map[string]interface{}{
 		"telegram": "",
 		"whatsapp": "",
+		"wechat":   "",
+		"qq":       "",
+		"email":    "",
 	}
 	contactMap, ok := raw.(map[string]interface{})
 	if !ok {
@@ -135,6 +138,9 @@ func normalizeSiteContact(raw interface{}) map[string]interface{} {
 	}
 	result["telegram"] = normalizeSettingText(contactMap["telegram"])
 	result["whatsapp"] = normalizeSettingText(contactMap["whatsapp"])
+	result["wechat"] = normalizeSettingText(contactMap["wechat"])
+	result["qq"] = normalizeSettingText(contactMap["qq"])
+	result["email"] = normalizeSettingText(contactMap["email"])
 	return result
 }
 

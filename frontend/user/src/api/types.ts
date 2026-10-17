@@ -229,6 +229,13 @@ export interface ResellerDomainData {
     verified_at?: string
     created_at: string
     updated_at: string
+    root_domain?: string
+    hostname_status?: string
+    ssl_status?: string
+    provisioning_status?: string
+    provisioning_error?: string
+    last_sync_at?: string
+    dns_records?: { type: string; name: string; value: string }[]
 }
 
 export interface ResellerManagementSnapshotData {
@@ -236,6 +243,8 @@ export interface ResellerManagementSnapshotData {
     can_apply: boolean
     profile?: ResellerManagementProfileData
     domains: ResellerDomainData[]
+    domain_binding_enabled?: boolean
+    domain_cname_target?: string
 }
 
 export interface ResellerApplyPayload {
@@ -252,10 +261,22 @@ export interface ResellerLocalizedText {
     'en-US': string
 }
 
+export interface ResellerBannerConfig {
+    mode: 'inherit' | 'custom' | 'hidden'
+    image: string
+    mobile_image: string
+    title: ResellerLocalizedText
+    subtitle: ResellerLocalizedText
+    link_type: 'none' | 'internal' | 'external'
+    link_value: string
+    open_in_new_tab: boolean
+}
+
 export interface ResellerSiteConfigPayload {
     site_name: string
     logo?: string
     favicon?: string
+    banner?: ResellerBannerConfig | null
     announcement?: {
         enabled: boolean
         type: string
@@ -265,6 +286,8 @@ export interface ResellerSiteConfigPayload {
     support?: {
         telegram?: string
         whatsapp?: string
+        wechat?: string
+        qq?: string
         email?: string
         support_url?: string
     }
@@ -310,6 +333,17 @@ export interface ResellerProductSettingData {
 }
 
 export interface ResellerProductSettingSKUData {
+    supply_price_amount: string | null
+    min_sale_price_amount: string
+    max_sale_price_amount: string | null
+    sale_price_amount: string
+    draft_price_amount: string
+    profit_amount: string
+    price_valid: boolean
+    can_sell: boolean
+    error_code: string
+    pricing_revision: string
+
     id: number
     sku_code: string
     spec_values: Record<string, unknown>
@@ -336,15 +370,35 @@ export interface ResellerProductSettingDetailData {
 export interface ResellerProductSettingPayloadItem {
     sku_id: number
     is_listed: boolean
-    pricing_mode: ResellerPricingMode | string
-    markup_percent: string
-    fixed_markup_amount: string
-    fixed_price_amount: string
-    sort_order: number
+    pricing_mode?: ResellerPricingMode | string
+    markup_percent?: string
+    fixed_markup_amount?: string
+    fixed_price_amount?: string
+    sort_order?: number
+    pricing_revision?: string
 }
 
 export interface ResellerProductSettingUpdatePayload {
     settings: ResellerProductSettingPayloadItem[]
+}
+
+export interface ResellerProductImagesData {
+    product: { id: number; title: Record<string, string>; slug: string }
+    platform_images: string[]
+    custom_images: string[]
+    effective_images: string[]
+    image_source: 'platform' | 'custom'
+    custom_detail_image: string
+    detail_image_source: 'platform' | 'custom'
+    platform_detail_content: Record<string, string> | null
+    revision: number
+    operation_id: string
+}
+
+export interface ResellerProductImagesUpdatePayload {
+    images: string[]
+    revision: number
+    operation_id: string
 }
 
 export interface ResellerProductSettingPreviewItem {

@@ -3,9 +3,10 @@
 package money
 
 import (
+	"bytes"
 	"database/sql/driver"
 	"encoding/json"
-
+	"fmt"
 	"github.com/shopspring/decimal"
 )
 
@@ -66,4 +67,39 @@ func (m *Amount) Scan(value any) error {
 // String returns a fixed two-decimal representation.
 func (m Amount) String() string {
 	return m.Decimal.Round(2).StringFixed(2)
+}
+
+// OptionalAmount distinguishes an omitted field from an explicit null.
+type OptionalAmount struct {
+	Set   bool
+	Value *Amount
+}
+
+func (m *OptionalAmount) UnmarshalJSON(data []byte) error {
+	m.Set = true
+	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+		m.Value = nil
+		return nil
+	}
+	var raw string
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return fmt.Errorf("amount must be a decimal string or null")
+	}
+	value, err := decimal.NewFromString(raw)
+	if err != nil {
+		return err
+	}
+	if !value.Equal(value.Round(2)) || value.Abs().GreaterThanOrEqual(decimal.NewFromInt(1).Shift(18)) {
+		return fmt.Errorf("amount exceeds decimal(20,2) precision")
+	}
+	amount := FromDecimal(value)
+	m.Value = &amount
+	return nil
+}
+
+func (m OptionalAmount) Apply(current *Amount) *Amount {
+	if m.Set {
+		return m.Value
+	}
+	return current
 }

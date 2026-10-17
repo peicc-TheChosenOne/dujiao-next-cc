@@ -1,14 +1,78 @@
 package presenter
 
 import (
+	"encoding/json"
 	"time"
 
 	resellerdomain "github.com/dujiao-next/internal/modules/reseller/domain"
 
 	productdomain "github.com/dujiao-next/internal/modules/catalog/product/domain"
 
+	resellercontract "github.com/dujiao-next/internal/modules/reseller/contract"
 	"github.com/dujiao-next/internal/shared/jsonmap"
 )
+
+type ResellerProductImagesResp struct {
+	Product struct {
+		ID    uint         `json:"id"`
+		Title jsonmap.JSON `json:"title"`
+		Slug  string       `json:"slug"`
+	} `json:"product"`
+	PlatformImages        []string     `json:"platform_images"`
+	CustomImages          []string     `json:"custom_images"`
+	EffectiveImages       []string     `json:"effective_images"`
+	ImageSource           string       `json:"image_source"`
+	CustomDetailImage     string       `json:"custom_detail_image"`
+	DetailImageSource     string       `json:"detail_image_source"`
+	PlatformDetailContent jsonmap.JSON `json:"platform_detail_content"`
+	Revision              uint64       `json:"revision"`
+	OperationID           string       `json:"operation_id"`
+}
+
+func NewResellerProductImagesResp(product productdomain.Product, config resellerdomain.ProductImages) ResellerProductImagesResp {
+	resp := ResellerProductImagesResp{PlatformImages: append([]string{}, product.Images...), CustomImages: append([]string{}, config.Images...), Revision: config.Revision, OperationID: config.OperationID, ImageSource: "platform"}
+	resp.Product.ID, resp.Product.Title, resp.Product.Slug = product.ID, product.TitleJSON, product.Slug
+	resp.CustomDetailImage = config.DetailImage
+	resp.PlatformDetailContent = product.ContentJSON
+	resp.DetailImageSource = "platform"
+	if config.DetailImage != "" {
+		resp.DetailImageSource = "custom"
+	}
+	resp.EffectiveImages = append([]string{}, resp.PlatformImages...)
+	if len(resp.CustomImages) > 0 {
+		resp.ImageSource = "custom"
+		resp.EffectiveImages = append([]string{}, resp.CustomImages...)
+	}
+	return resp
+}
+
+type AdminResellerProductImagesResp struct {
+	ResellerProductImagesResp
+	ResellerID    uint       `json:"reseller_id"`
+	UserID        uint       `json:"user_id"`
+	OwnerLabel    string     `json:"owner_label"`
+	ProfileStatus string     `json:"profile_status"`
+	CanEdit       bool       `json:"can_edit"`
+	UpdatedAt     *time.Time `json:"updated_at"`
+}
+
+func NewAdminResellerProductImagesResp(product productdomain.Product, config resellerdomain.ProductImages, profile *resellerdomain.Profile) AdminResellerProductImagesResp {
+	resp := AdminResellerProductImagesResp{ResellerProductImagesResp: NewResellerProductImagesResp(product, config), ResellerID: config.ResellerID}
+	if !config.UpdatedAt.IsZero() {
+		resp.UpdatedAt = &config.UpdatedAt
+	}
+	if profile != nil {
+		resp.ResellerID, resp.UserID, resp.ProfileStatus = profile.ID, profile.UserID, profile.Status
+		if profile.User != nil {
+			resp.OwnerLabel = profile.User.Email
+			if resp.OwnerLabel == "" {
+				resp.OwnerLabel = profile.User.DisplayName
+			}
+		}
+		resp.CanEdit = profile.Status == resellerdomain.ProfileStatusActive && product.IsActive && product.Category.IsActive && product.Category.DeletedAt == nil
+	}
+	return resp
+}
 
 type ResellerProfileSummaryResp struct {
 	ID               uint      `json:"id"`
@@ -73,23 +137,32 @@ type ResellerManagementProfileResp struct {
 }
 
 type ResellerDomainResp struct {
-	ID                 uint       `json:"id"`
-	Domain             string     `json:"domain"`
-	Type               string     `json:"type"`
-	VerificationToken  string     `json:"verification_token,omitempty"`
-	VerificationStatus string     `json:"verification_status"`
-	Status             string     `json:"status"`
-	IsPrimary          bool       `json:"is_primary"`
-	VerifiedAt         *time.Time `json:"verified_at,omitempty"`
-	CreatedAt          time.Time  `json:"created_at"`
-	UpdatedAt          time.Time  `json:"updated_at"`
+	ID                 uint                               `json:"id"`
+	Domain             string                             `json:"domain"`
+	Type               string                             `json:"type"`
+	VerificationToken  string                             `json:"verification_token,omitempty"`
+	VerificationStatus string                             `json:"verification_status"`
+	Status             string                             `json:"status"`
+	IsPrimary          bool                               `json:"is_primary"`
+	VerifiedAt         *time.Time                         `json:"verified_at,omitempty"`
+	CreatedAt          time.Time                          `json:"created_at"`
+	UpdatedAt          time.Time                          `json:"updated_at"`
+	RootDomain         string                             `json:"root_domain,omitempty"`
+	HostnameStatus     string                             `json:"hostname_status,omitempty"`
+	SSLStatus          string                             `json:"ssl_status,omitempty"`
+	ProvisioningStatus string                             `json:"provisioning_status,omitempty"`
+	ProvisioningError  string                             `json:"provisioning_error,omitempty"`
+	LastSyncAt         *time.Time                         `json:"last_sync_at,omitempty"`
+	DNSRecords         []resellercontract.DomainDNSRecord `json:"dns_records,omitempty"`
 }
 
 type ResellerManagementSnapshotResp struct {
-	Opened   bool                           `json:"opened"`
-	CanApply bool                           `json:"can_apply"`
-	Profile  *ResellerManagementProfileResp `json:"profile,omitempty"`
-	Domains  []ResellerDomainResp           `json:"domains"`
+	Opened               bool                           `json:"opened"`
+	CanApply             bool                           `json:"can_apply"`
+	Profile              *ResellerManagementProfileResp `json:"profile,omitempty"`
+	Domains              []ResellerDomainResp           `json:"domains"`
+	DomainBindingEnabled bool                           `json:"domain_binding_enabled"`
+	DomainCNAMETarget    string                         `json:"domain_cname_target,omitempty"`
 }
 
 type ResellerSiteConfigResp struct {
@@ -97,6 +170,7 @@ type ResellerSiteConfigResp struct {
 	SiteName     string        `json:"site_name"`
 	Logo         string        `json:"logo"`
 	Favicon      string        `json:"favicon"`
+	Banner       jsonmap.JSON  `json:"banner"`
 	Announcement jsonmap.JSON  `json:"announcement"`
 	Support      jsonmap.JSON  `json:"support"`
 	SEO          jsonmap.JSON  `json:"seo"`
@@ -131,6 +205,7 @@ type AdminResellerSiteConfigResp struct {
 	SiteName     string                            `json:"site_name"`
 	Logo         string                            `json:"logo"`
 	Favicon      string                            `json:"favicon"`
+	Banner       jsonmap.JSON                      `json:"banner"`
 	Announcement jsonmap.JSON                      `json:"announcement"`
 	Support      jsonmap.JSON                      `json:"support"`
 	SEO          jsonmap.JSON                      `json:"seo"`
@@ -165,6 +240,7 @@ type ResellerProductSettingProductResp struct {
 }
 
 type ResellerProductSettingSKUResp struct {
+	resellercontract.SupplyQuote
 	ID              uint                        `json:"id"`
 	SKUCode         string                      `json:"sku_code"`
 	SpecValues      jsonmap.JSON                `json:"spec_values"`
@@ -181,6 +257,7 @@ type ResellerProductSettingDetailResp struct {
 }
 
 type ResellerProductSettingDTOInput struct {
+	Profile          *resellerdomain.Profile
 	Product          productdomain.Product
 	Settings         []resellerdomain.ProductSetting
 	EffectiveBySKUID map[uint]string
@@ -260,6 +337,9 @@ func NewResellerDomainResp(row *resellerdomain.Domain) ResellerDomainResp {
 	if row == nil {
 		return ResellerDomainResp{}
 	}
+	var records []resellercontract.DomainDNSRecord
+	encoded, _ := json.Marshal(row.DNSRecordsJSON["records"])
+	_ = json.Unmarshal(encoded, &records)
 	return ResellerDomainResp{
 		ID:                 row.ID,
 		Domain:             row.Domain,
@@ -271,7 +351,28 @@ func NewResellerDomainResp(row *resellerdomain.Domain) ResellerDomainResp {
 		VerifiedAt:         row.VerifiedAt,
 		CreatedAt:          row.CreatedAt,
 		UpdatedAt:          row.UpdatedAt,
+		RootDomain:         row.RootDomain,
+		HostnameStatus:     row.HostnameStatus,
+		SSLStatus:          row.SSLStatus,
+		ProvisioningStatus: row.ProvisioningStatus,
+		ProvisioningError:  row.ProvisioningError,
+		LastSyncAt:         row.LastSyncAt,
+		DNSRecords:         records,
 	}
+}
+
+type AdminResellerDomainResp struct {
+	ResellerDomainResp
+	ResellerID uint                      `json:"reseller_id"`
+	Profile    *AdminResellerProfileResp `json:"profile,omitempty"`
+}
+
+func NewAdminResellerDomainRespList(rows []resellerdomain.Domain) []AdminResellerDomainResp {
+	result := make([]AdminResellerDomainResp, 0, len(rows))
+	for i := range rows {
+		result = append(result, AdminResellerDomainResp{ResellerDomainResp: NewResellerDomainResp(&rows[i]), ResellerID: rows[i].ResellerID, Profile: NewAdminResellerProfileResp(rows[i].Profile)})
+	}
+	return result
 }
 
 func NewResellerDomainRespList(rows []resellerdomain.Domain) []ResellerDomainResp {
@@ -303,6 +404,7 @@ func NewResellerSiteConfigResp(row *resellerdomain.SiteConfig) *ResellerSiteConf
 		SiteName:     row.SiteName,
 		Logo:         row.Logo,
 		Favicon:      row.Favicon,
+		Banner:       row.BannerJSON,
 		Announcement: row.AnnouncementJSON,
 		Support:      row.SupportJSON,
 		SEO:          row.SEOJSON,
@@ -363,6 +465,7 @@ func NewAdminResellerSiteConfigResp(row *resellerdomain.SiteConfig) AdminReselle
 		SiteName:     row.SiteName,
 		Logo:         row.Logo,
 		Favicon:      row.Favicon,
+		Banner:       row.BannerJSON,
 		Announcement: row.AnnouncementJSON,
 		Support:      row.SupportJSON,
 		SEO:          row.SEOJSON,
@@ -408,7 +511,8 @@ func NewResellerProductSettingDetailResp(input ResellerProductSettingDTOInput) R
 			ID:              sku.ID,
 			SKUCode:         sku.SKUCode,
 			SpecValues:      sku.SpecValuesJSON,
-			BasePriceAmount: sku.PriceAmount.String(),
+			BasePriceAmount: supplyAmountString(sku),
+			SupplyQuote:     resellercontract.ResolveSupplyQuote(input.Profile, sku, productSetting, setting),
 			IsActive:        sku.IsActive,
 			Setting:         settingResp,
 			EffectivePrice:  input.EffectiveBySKUID[sku.ID],
@@ -626,4 +730,11 @@ func NewResellerDashboardResp(opened bool, profile *resellerdomain.Profile, bala
 		WithdrawEnabled:        withdrawEnabled,
 		WithdrawDisabledReason: withdrawDisabledReason,
 	}
+}
+
+func supplyAmountString(sku productdomain.ProductSKU) string {
+	if sku.SupplyPriceAmount == nil {
+		return ""
+	}
+	return sku.SupplyPriceAmount.String()
 }

@@ -1,6 +1,7 @@
 package application
 
 import (
+	"crypto/rand"
 	"errors"
 	"strings"
 	"time"
@@ -33,6 +34,7 @@ import (
 
 // OrderService 订单服务
 type OrderService struct {
+	pricingSecret           []byte
 	orderStore              ordercontract.Store
 	userRepo                usercontract.Store
 	productRepo             productcontract.Repository
@@ -114,7 +116,12 @@ func (s *OrderService) SetProductMappingService(svc upstreamStockEnsurer) {
 
 // NewOrderService 创建订单服务
 func NewOrderService(opts OrderServiceOptions) *OrderService {
+	secret := make([]byte, 32)
+	if _, err := rand.Read(secret); err != nil {
+		panic(err)
+	}
 	return &OrderService{
+		pricingSecret:           secret,
 		orderStore:              opts.OrderStore,
 		userRepo:                opts.UserStore,
 		productRepo:             opts.ProductStore,
@@ -138,6 +145,7 @@ func NewOrderService(opts OrderServiceOptions) *OrderService {
 
 // CreateOrderInput 创建订单输入
 type CreateOrderInput struct {
+	PricingRevision     string
 	UserID              uint
 	Tenant              resellercontract.TenantContext
 	Items               []CreateOrderItem
@@ -152,6 +160,7 @@ type CreateOrderInput struct {
 
 // CreateGuestOrderInput 游客创建订单输入
 type CreateGuestOrderInput struct {
+	PricingRevision     string
 	Email               string
 	OrderPassword       string
 	Locale              string
@@ -237,6 +246,7 @@ func (s *OrderService) CreateOrder(input CreateOrderInput) (*orderdomain.Order, 
 		AffiliateVisitorKey: input.AffiliateVisitorKey,
 		ClientIP:            input.ClientIP,
 		ManualFormData:      input.ManualFormData,
+		PricingRevision:     input.PricingRevision,
 		SkipRiskControl:     input.SkipRiskControl,
 		SkipIPRiskControl:   input.SkipIPRiskControl,
 	})
@@ -266,10 +276,12 @@ func (s *OrderService) CreateGuestOrder(input CreateGuestOrderInput) (*orderdoma
 		ClientIP:            input.ClientIP,
 		IsGuest:             true,
 		ManualFormData:      input.ManualFormData,
+		PricingRevision:     input.PricingRevision,
 	})
 }
 
 type orderCreateParams struct {
+	PricingRevision          string
 	UserID                   uint
 	GuestEmail               string
 	GuestPassword            string
@@ -292,6 +304,7 @@ type orderCreateParams struct {
 
 // OrderPreview 订单金额预览
 type OrderPreview struct {
+	PricingRevision         string             `json:"pricing_revision,omitempty"`
 	Currency                string             `json:"currency"`
 	OriginalAmount          money.Amount       `json:"original_amount"`
 	MemberDiscountAmount    money.Amount       `json:"member_discount_amount"`
@@ -350,6 +363,7 @@ func (s *OrderService) PreviewOrder(input CreateOrderInput) (*OrderPreview, erro
 		AffiliateVisitorKey: input.AffiliateVisitorKey,
 		ClientIP:            input.ClientIP,
 		ManualFormData:      input.ManualFormData,
+		PricingRevision:     input.PricingRevision,
 		SkipManualFormCheck: true,
 	}
 	if err := s.checkOrderRisk(&params, false); err != nil {
@@ -372,6 +386,7 @@ func (s *OrderService) PreviewGuestOrder(input CreateGuestOrderInput) (*OrderPre
 		ClientIP:            input.ClientIP,
 		IsGuest:             true,
 		ManualFormData:      input.ManualFormData,
+		PricingRevision:     input.PricingRevision,
 		SkipManualFormCheck: true,
 	}
 	if err := s.checkOrderRisk(&params, false); err != nil {
@@ -381,12 +396,16 @@ func (s *OrderService) PreviewGuestOrder(input CreateGuestOrderInput) (*OrderPre
 }
 
 func (s *OrderService) previewOrder(input orderCreateParams) (*OrderPreview, error) {
+	revision := ""
 	result, err := s.buildOrderResult(input)
 	if err != nil {
 		return nil, err
 	}
 	if s.resellerPricingResolver != nil {
-		if _, err := s.resellerPricingResolver.ApplyToOrderBuildResult(input.Tenant, input.UserID, result); err != nil {
+		var ctx *resellercontract.OrderPricingContext
+		ctx, err = s.resellerPricingResolver.ApplyToOrderBuildResult(input.Tenant, input.UserID, result)
+		revision = s.pricingRevision(ctx)
+		if err != nil {
 			return nil, err
 		}
 	} else if isResellerOrderContext(input.Tenant) {
@@ -414,6 +433,7 @@ func (s *OrderService) previewOrder(input orderCreateParams) (*OrderPreview, err
 		})
 	}
 	return &OrderPreview{
+		PricingRevision:         revision,
 		Currency:                result.Currency,
 		OriginalAmount:          money.FromDecimal(result.OriginalAmount),
 		MemberDiscountAmount:    money.FromDecimal(result.MemberDiscountAmount),
@@ -446,6 +466,10 @@ func (s *OrderService) createOrder(input orderCreateParams) (*orderdomain.Order,
 		}
 	} else if isResellerOrderContext(input.Tenant) {
 		return nil, ErrResellerProductNotListed
+	}
+
+	if pricingCtx != nil && (input.PricingRevision == "" || input.PricingRevision != s.pricingRevision(pricingCtx)) {
+		return nil, resellercontract.ErrPricingChanged
 	}
 
 	// 仅允许钱包余额支付时，在创建订单（锁库存）前预校验余额是否充足
@@ -542,6 +566,13 @@ func (s *OrderService) createOrder(input orderCreateParams) (*orderdomain.Order,
 	}
 
 	err = s.orderStore.WithinTransaction(func(tx ordercontract.Transaction) error {
+		if pricingCtx != nil {
+			var checkErr error
+			pricingCtx, checkErr = s.confirmPricingInTransaction(tx, input, result)
+			if checkErr != nil {
+				return checkErr
+			}
+		}
 		orderStore := tx.Orders()
 		productSKURepo := tx.ProductSKUs()
 		if s.riskControlSvc != nil && !input.SkipRiskControl {
@@ -687,6 +718,11 @@ func (s *OrderService) createOrder(input orderCreateParams) (*orderdomain.Order,
 		return nil
 	})
 	if err != nil {
+		for _, pricingErr := range []error{resellercontract.ErrPricingChanged, resellercontract.ErrPriceBelowBase, resellercontract.ErrMarkupExceeded, ErrResellerProductNotListed, resellercontract.ErrProfileInactive} {
+			if errors.Is(err, pricingErr) {
+				return nil, err
+			}
+		}
 		for _, couponErr := range []error{
 			couponcontract.ErrNotFound,
 			couponcontract.ErrUsageLimit,

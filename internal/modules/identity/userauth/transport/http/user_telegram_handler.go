@@ -179,6 +179,7 @@ func respondTelegramLoginSuccess(c *gin.Context, h *UserTelegramHandler, res *Au
 		h.recordLogin(c, res.User.Email, res.User.ID, constants.LoginLogStatusSuccess, constants.LoginLogPasswordOK2FAPending, constants.LoginLogSourceTelegram)
 		response.Success(c, gin.H{
 			"requires_totp":        true,
+			"requires_totp_setup":  res.RequiresTOTPSetup,
 			"challenge_token":      res.ChallengeToken,
 			"challenge_expires_at": res.ChallengeExpiresAt.Format("2006-01-02T15:04:05Z07:00"),
 		})

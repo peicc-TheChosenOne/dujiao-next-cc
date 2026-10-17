@@ -52,6 +52,7 @@ func New(c *container.Container) Handlers {
 			user2FAAuthTransportAdapter{auth: c.UserAuthService, users: c.UserStore},
 			user2FAChallengeStoreAdapter{},
 			recorder,
+			user2FAAuthTransportAdapter{auth: c.UserAuthService, users: c.UserStore},
 		),
 		TelegramOIDC: userauthtransport.NewUserTelegramOIDCHandler(
 			userTelegramOIDCTransportAdapter{auth: c.UserAuthService},

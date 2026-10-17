@@ -17,6 +17,7 @@ import type {
   AdminResellerProfileApprovePayload,
   AdminResellerProfileUpdatePayload,
   AdminResellerProductSettingUpdatePayload,
+  AdminResellerImageMutation,
   AdminResellerReasonPayload,
   AdminResellerSiteConfigPayload,
   AdminResellerSystemDomainPayload,
@@ -463,6 +464,8 @@ export const adminAPI = {
     api.post(`/admin/resellers/withdraws/${id}/pay`, {}),
   getResellerProfiles: (params?: Record<string, unknown>) =>
     api.get('/admin/resellers/profiles', { params }),
+  updateResellerLoginSecurity: (id: number, data: { required: boolean; reason: string }) => api.put(`/admin/resellers/profiles/${id}/login-security`, data),
+  resetResellerLoginSecurity: (id: number, data: { reason: string; identity_verified: boolean }) => api.post(`/admin/resellers/profiles/${id}/login-security/reset`, data),
   getResellerProfile: (id: number) =>
     api.get(`/admin/resellers/profiles/${id}`),
   updateResellerProfile: (id: number, data: AdminResellerProfileUpdatePayload) =>
@@ -483,6 +486,8 @@ export const adminAPI = {
     api.post(`/admin/resellers/domains/${id}/approve`, {}),
   disableResellerDomain: (id: number) =>
     api.post(`/admin/resellers/domains/${id}/disable`, {}),
+  refreshResellerDomain: (id: number) =>
+    api.post(`/admin/resellers/domains/${id}/refresh`, {}),
   setPrimaryResellerDomain: (id: number) =>
     api.post(`/admin/resellers/domains/${id}/set-primary`, {}),
   getResellerSiteConfigs: (params?: Record<string, unknown>) =>
@@ -495,6 +500,21 @@ export const adminAPI = {
     api.post(`/admin/resellers/site-configs/${resellerId}/reset`, {}),
   getResellerProductSettings: (params?: Record<string, unknown>) =>
     api.get('/admin/resellers/product-settings', { params }),
+  getResellerProductImages: (params?: Record<string, unknown>) =>
+    api.get('/admin/resellers/product-images', { params }),
+  getResellerProductImagesDetail: (resellerId: number, productId: number) =>
+    api.get(`/admin/resellers/product-images/${resellerId}/${productId}`),
+  updateResellerProductImages: (resellerId: number, productId: number, data: AdminResellerImageMutation) =>
+    api.put(`/admin/resellers/product-images/${resellerId}/${productId}`, data),
+  resetResellerProductDetailImage: (resellerId: number, productId: number, data: AdminResellerImageMutation) =>
+    api.put(`/admin/resellers/product-images/${resellerId}/${productId}/detail`, data),
+  uploadResellerProductImage: (resellerId: number, productId: number, file: File, revision: number, operationId: string, detail = false) => {
+    const data = new FormData()
+    data.append('file', file)
+    data.append('revision', String(revision))
+    data.append('operation_id', operationId)
+    return api.post(`/admin/resellers/product-images/${resellerId}/${productId}/${detail ? 'detail/upload' : 'upload'}`, data)
+  },
   getResellerProductSetting: (resellerId: number, productId: number) =>
     api.get(`/admin/resellers/product-settings/${resellerId}/${productId}`),
   updateResellerProductSettings: (
@@ -583,6 +603,7 @@ export const adminAPI = {
   batchDeleteProductMappings: (ids: number[]) => api.post('/admin/product-mappings/batch-delete', { ids }),
   getUpstreamProducts: (params?: Record<string, unknown>) => api.get('/admin/upstream-products', { params }),
   getUpstreamCategories: (params: { connection_id: string }) => api.get('/admin/upstream-categories', { params }),
+  getUpstreamCategoryCounts: (params: { connection_id: string }) => api.get('/admin/upstream-category-counts', { params }),
   batchImportByCategory: (data: Record<string, unknown>) => api.post('/admin/product-mappings/batch-import-by-category', data),
   // Procurement Orders
   getProcurementOrders: (params?: Record<string, unknown>) => api.get('/admin/procurement-orders', { params }),
@@ -635,12 +656,6 @@ export const adminAPI = {
   deleteTelegramBroadcast: (id: number) => api.delete(`/admin/telegram-bot/broadcasts/${id}`),
   getTelegramBroadcastUsers: (params?: Record<string, unknown>) =>
     api.get('/admin/telegram-bot/users', { params }),
-
-  // 广告代理
-  renderAdSlot: (slotCode: string, params?: Record<string, string>) =>
-    api.get(`/admin/ads/render/${slotCode}`, { params }),
-  reportAdImpression: (data: { tenant: string; client: string; slot_code: string; items: { ad_id: number; impression_token: string }[] }) =>
-    api.post('/admin/ads/impression', data),
 
   // 文章分类
   getPostCategories: (params?: Record<string, unknown>) => api.get('/admin/post-categories', { params }),

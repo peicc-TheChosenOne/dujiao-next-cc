@@ -17,15 +17,16 @@
         <div class="mb-8 text-center">
           <p class="text-xs font-semibold uppercase tracking-[0.22em] text-primary">{{ brandSiteName }}</p>
           <h1 class="mt-3 text-3xl font-black text-foreground">
-            {{ step === 'totp' ? t('auth.login.totp.title') : t('auth.login.title') }}
+            {{ step === 'enrollment' ? t('auth.login.enrollment.title') : step === 'totp' ? t('auth.login.totp.title') : t('auth.login.title') }}
           </h1>
           <p class="mt-2 text-sm text-muted-foreground">
-            {{ step === 'totp' ? t('auth.login.totp.subtitle') : t('auth.login.subtitle') }}
+            {{ step === 'enrollment' ? t('auth.login.enrollment.subtitle') : step === 'totp' ? t('auth.login.totp.subtitle') : t('auth.login.subtitle') }}
           </p>
         </div>
 
+        <LoginEnrollment v-if="step === 'enrollment'" :challenge-token="userAuthStore.challengeToken" :remaining-seconds="challengeRemainingSeconds" @cancel="cancel2FA" @bound="handleEnrollmentBound" @complete="handleEnrollmentComplete" />
         <form
-          v-if="step === 'totp'"
+          v-else-if="step === 'totp'"
           class="space-y-6"
           @submit.prevent="handleVerify2FA"
         >
@@ -260,7 +261,7 @@
         </form>
       </Card>
 
-      <div v-if="registrationEnabled" class="mt-4 text-center">
+      <div v-if="registrationEnabled && step === 'password'" class="mt-4 text-center">
         <router-link
           to="/auth/register"
           class="text-muted-foreground transition-colors hover:text-foreground text-sm"
@@ -273,6 +274,7 @@
 </template>
 
 <script setup lang="ts">
+import LoginEnrollment from '@/components/security/LoginEnrollment.vue'
 import ImageCaptcha from '../../components/captcha/ImageCaptcha.vue'
 import TurnstileCaptcha from '../../components/captcha/TurnstileCaptcha.vue'
 import FormField from '../../components/FormField.vue'
@@ -291,6 +293,7 @@ const { t } = useI18n()
 const {
   userAuthStore, brandSiteName,
   email, password, showPassword, rememberMe,
+  handleEnrollmentBound, handleEnrollmentComplete,
   step, totpMode, totpCode, recoveryCode, challengeRemainingSeconds, handleVerify2FA, cancel2FA,
   error, info, formValidation,
   loginCaptchaEnabled, captchaProvider, captchaPayload, turnstileToken, turnstileSiteKey,

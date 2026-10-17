@@ -5,13 +5,16 @@ import (
 
 	productdomain "github.com/dujiao-next/internal/modules/catalog/product/domain"
 
+	"github.com/dujiao-next/internal/shared/money"
 	"github.com/shopspring/decimal"
 )
 
 // ProductRepository 是商品创建和更新所需的最小持久化端口。
 type ProductRepository interface {
 	GetByID(id string) (*productdomain.Product, error)
+	GetBySlugUnscoped(slug string) (*productdomain.Product, error)
 	Create(item *productdomain.Product) error
+	Restore(item *productdomain.Product) error
 	Update(item *productdomain.Product) error
 	CountBySlug(slug string, excludeID *string) (int64, error)
 	QuickUpdate(id string, fields map[string]interface{}) error
@@ -94,6 +97,8 @@ type CreateProductInput struct {
 	ManualFormSchemaJSON map[string]interface{}
 	PriceAmount          decimal.Decimal
 	CostPriceAmount      decimal.Decimal
+	SupplyPriceAmount    money.OptionalAmount
+	MinSalePriceAmount   money.OptionalAmount
 	// WholesalePrices 为可选字段：nil 表示更新时保留，非 nil 表示整体覆盖。
 	WholesalePrices     *[]productdomain.WholesalePriceInput
 	Images              []string
@@ -113,14 +118,16 @@ type CreateProductInput struct {
 
 // ProductSKUInput 描述商品 SKU 的完整写入值。
 type ProductSKUInput struct {
-	ID               uint
-	SKUCode          string
-	SpecValuesJSON   map[string]interface{}
-	PriceAmount      decimal.Decimal
-	CostPriceAmount  decimal.Decimal
-	ManualStockTotal int
-	IsActive         *bool
-	SortOrder        int
+	ID                 uint
+	SKUCode            string
+	SpecValuesJSON     map[string]interface{}
+	PriceAmount        decimal.Decimal
+	CostPriceAmount    decimal.Decimal
+	SupplyPriceAmount  money.OptionalAmount
+	MinSalePriceAmount money.OptionalAmount
+	ManualStockTotal   int
+	IsActive           *bool
+	SortOrder          int
 }
 
 func (s *WriteService) filterAvailablePaymentChannelIDs(ids []uint) ([]uint, error) {

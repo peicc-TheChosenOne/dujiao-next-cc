@@ -37,7 +37,7 @@ application: the Go backend, the customer storefront, and the admin panel.
 | Backend | Go 1.26 · Gin · GORM · SQLite / PostgreSQL |
 | Auth | JWT (separate admin / user realms) · Casbin RBAC · TOTP 2FA |
 | Async | asynq on Redis (optional — the server runs without it) |
-| Config | Viper (`config.yml`) |
+| Config | Viper (`config.yml` + ignored `config.private.yml` + environment overrides) |
 | Frontend | Vue 3 · Vite · TypeScript · Tailwind CSS v4 · pnpm 10 |
 | Admin UI | shadcn-vue / reka-ui |
 
@@ -67,6 +67,7 @@ application: the Go backend, the customer storefront, and the admin panel.
 │   ├── admin/                # admin panel SPA        (dev :5174)
 │   └── user/                 # customer storefront SPA (dev :5173)
 ├── config.yml.example
+├── config.private.yml.example # credentials and connection-address template
 ├── Dockerfile                # single full-stack image
 └── .goreleaser.yaml
 ```
@@ -172,7 +173,7 @@ On a fresh Ubuntu 22.04+ or Debian 12+ server, download and run the official
 interactive installer:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/dujiao-next/dujiao-next/main/scripts/dujiao-next-manager.sh \
+curl -fsSL https://raw.githubusercontent.com/peicc-TheChosenOne/dujiao-next-cc/codex/deploy-aiccpay/scripts/dujiao-next-manager.sh \
   -o /tmp/dujiao-next-manager.sh
 sudo bash /tmp/dujiao-next-manager.sh install
 ```
@@ -210,12 +211,14 @@ uninstall creates and verifies a `0600` recovery archive under
 
 ### Manual binary installation
 
-Download the latest `dujiao-next_*.tar.gz` from [Releases](https://github.com/dujiao-next/dujiao-next/releases):
+Download the latest `dujiao-next_*.tar.gz` from [Releases](https://github.com/peicc-TheChosenOne/dujiao-next-cc/releases):
 
 ```bash
 tar -xzf dujiao-next_*.tar.gz
 cp config.yml.example config.yml
-# edit config.yml: set jwt.secret, user_jwt.secret, and web.admin_path
+cp config.private.yml.example config.private.yml
+# set ordinary runtime options in config.yml; fill credentials and connection addresses in config.private.yml
+# use three independent strong keys for app.secret_key, jwt.secret and user_jwt.secret
 ./dujiao-next
 ```
 
@@ -224,10 +227,23 @@ Full instructions: https://dujiao-next.com/deploy/
 Or with Docker:
 
 ```bash
-docker run -d -p 8080:8080 -v $PWD/config.yml:/app/config.yml:ro dujiaonext/dujiao-next:latest
+# Replace vX.Y.Z with the release tag checked out in this source directory.
+docker build --build-arg APP_VERSION=vX.Y.Z -t dujiao-next:vX.Y.Z .
+docker run -d -p 8080:8080 -v $PWD/config.yml:/app/config.yml:ro -v $PWD/config.private.yml:/app/config.private.yml:ro dujiao-next:vX.Y.Z
 ```
 
 ## Quick Start (Develop)
+
+The backend loads defaults, `config.yml`, its sibling `config.private.yml`, then environment
+variables, in that order. Both runtime files stay outside Git and Docker build contexts;
+only the `.example` templates are committed. Existing single-file installations still work.
+Missing optional private files are allowed; an invalid private file or an explicitly selected
+missing file stops startup without logging its contents.
+
+Set `DUJIAO_CONFIG_FILE` and `DUJIAO_PRIVATE_CONFIG_FILE` when selecting files outside the
+working directory. Do not use the Git branch to select credentials automatically: local
+development and production deployments keep their own runtime files. Never regenerate
+`app.secret_key` during an upgrade; stored secrets require the existing key for decryption.
 
 Run the backend and the two frontends separately for hot reload:
 
@@ -247,6 +263,16 @@ development-only concern.
 
 ## Building the Full-Stack Binary
 
+Run `python3 scripts/check-release-safety.py` before preparing a release. It rejects runtime
+files in Git inputs, public IP literals in deployment templates, production frontend `.env`
+files, and an expanded release archive allowlist. An optional `--archives dist` also checks
+built archives. These checks do not replace a review of history or server-side settings.
+
+Development is on `codex/dev`; production is on `codex/deploy-aiccpay`. Version tags must
+point to commits merged into production. The release workflow reruns the complete CI
+workflow before publishing. Configuration, database data and uploaded files are managed on
+the target server and are never replaced by the release archive.
+
 ```bash
 goreleaser build --snapshot --single-target --clean
 ```
@@ -265,6 +291,32 @@ go build -tags release,fullstack -o dujiao-next ./cmd/server
 
 Note that admin uses `build:fullstack`, not `build`. Plain `build` produces a bundle pinned to
 `/`, which silently breaks a custom `web.admin_path`.
+
+For automatic reseller domains, enable Cloudflare for SaaS on the platform zone and
+configure `reseller.domain_binding` using the example files. Keep the API token in
+`config.private.yml`, restricted to the platform zone's SSL and Certificates permission.
+The queue synchronizes hostnames every minute. Submitting a root domain reserves the
+root and `www` together; both hostname and certificate states must be active before
+administrator approval opens the store. Defaults limit each reseller to five root/www
+pairs and the platform to 100 hostnames; pending validation expires after seven days.
+The provider quota is checked before remote creation. Increasing the configured
+limit may incur additional Cloudflare charges. Temporary provider outages preserve approved
+stores. Disabling a binding immediately closes the store and schedules remote cleanup.
+
+Customers point both CNAME records to the configured entry hostname. Apex records need
+DNS-provider CNAME flattening or ALIAS support. Cloudflare-proxied customer records use
+Cloudflare for SaaS O2O; do not promise a fixed DNS/certificate completion time.
+
+Set the SaaS fallback origin to a proxied hostname that points at the server, and point
+the entry CNAME to it. Custom hostnames reach the origin with their own SNI, which a
+platform certificate cannot match, so use the SaaS zone's Full (not strict) mode and
+accept only Cloudflare connections at the origin: `deploy/nginx-cloudflare-saas.conf.example`
+is a catch-all server that allows Cloudflare's published networks only, restores the
+visitor IP from `CF-Connecting-IP`, and passes the original Host to the application.
+Authenticated Origin Pulls can be added on top. Keep `reseller.trusted_forwarded_host:
+false` and local-only application trusted proxies. DNS migration must preserve existing
+records and DNSSEC settings. Test gray-cloud and orange-cloud customer domains before
+retiring the previous edge service.
 
 ## Testing
 

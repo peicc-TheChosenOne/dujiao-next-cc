@@ -2,6 +2,18 @@ package userhttp
 
 import "github.com/gin-gonic/gin"
 
+func RegisterUserProductImagesRoutes(console gin.IRoutes, handler *UserProductImagesHandler) {
+	if console == nil || handler == nil {
+		panic("reseller product images routes: required dependency is nil")
+	}
+	console.GET("/product-images", handler.List)
+	console.GET("/product-images/:product_id", handler.Get)
+	console.POST("/product-images/:product_id/upload", handler.Upload)
+	console.POST("/product-images/:product_id/detail/upload", handler.UploadDetail)
+	console.PUT("/product-images/:product_id/detail", handler.ResetDetail)
+	console.PUT("/product-images/:product_id", handler.Update)
+}
+
 // RegisterUserConsoleRoutes 注册用户中心分销商控制台（入驻/域名/站点配置）路由。
 // 调用方必须传入已挂载登录鉴权与 RequireMainTenantForResellerConsole 的 RouterGroup。
 func RegisterUserConsoleRoutes(console gin.IRoutes, handler *UserHandler) {
@@ -12,6 +24,7 @@ func RegisterUserConsoleRoutes(console gin.IRoutes, handler *UserHandler) {
 	console.POST("/apply", handler.ApplyProfile)
 	console.GET("/domains", handler.ListDomains)
 	console.POST("/domains", handler.SubmitCustomDomain)
+	console.POST("/domains/:id/refresh", handler.RefreshDomain)
 	console.GET("/site-config", handler.GetSiteConfig)
 	console.PUT("/site-config", handler.UpdateSiteConfig)
 	console.POST("/upload", handler.UploadImage)

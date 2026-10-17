@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"path"
 	"sort"
 	"strings"
 
@@ -101,6 +100,7 @@ func SetupRouter(cfg *config.Config, c *container.Container) *gin.Engine {
 	publicCatalogHandler := catalogproductbootstrap.NewPublicHTTP(catalogproductbootstrap.PublicHTTPDependencies{
 		Products:     c.ProductReadService,
 		Hidden:       c.ResellerStore,
+		Images:       c.ResellerStore,
 		Pricer:       c.ResellerPricingResolver,
 		Promotions:   c.PromotionRepo,
 		MemberLevels: c.MemberLevelService,
@@ -164,6 +164,7 @@ func SetupRouter(cfg *config.Config, c *container.Container) *gin.Engine {
 	resellerHandlers := resellerbootstrap.New(c)
 	userResellerHandler := resellerHandlers.User
 	userResellerProductSettingHandler := resellerHandlers.UserProductSetting
+	userResellerProductImagesHandler := resellerHandlers.UserProductImages
 	userResellerFinanceHandler := resellerHandlers.UserFinance
 	userResellerOrderHandler := resellerHandlers.UserOrder
 	adminResellerManagementHandler := resellerHandlers.AdminManagement
@@ -191,6 +192,43 @@ func SetupRouter(cfg *config.Config, c *container.Container) *gin.Engine {
 		MaxRequests:   cfg.Security.LoginRateLimit.MaxAttempts,
 		BlockSeconds:  cfg.Security.LoginRateLimit.BlockSeconds,
 		MessageKey:    "error.login_too_many",
+	}
+	// 登录另按账号计数（不绑定 IP），拦截多 IP 分布式爆破同一账号
+	loginAccountRule := middleware.RateLimitRule{
+		Prefix:        fmt.Sprintf("%s:rate:login_account", redisPrefix),
+		WindowSeconds: 900,
+		MaxRequests:   20,
+		BlockSeconds:  900,
+		MessageKey:    "error.login_too_many",
+	}
+	adminLoginAccountRule := middleware.RateLimitRule{
+		Prefix:        fmt.Sprintf("%s:rate:admin_login_account", redisPrefix),
+		WindowSeconds: 900,
+		MaxRequests:   20,
+		BlockSeconds:  900,
+		MessageKey:    "error.login_too_many",
+	}
+	// 发送验证码、注册、找回密码按 IP 计数：防邮件轰炸、批量注册与重置码爆破
+	verifyCodeRule := middleware.RateLimitRule{
+		Prefix:        fmt.Sprintf("%s:rate:verify_code", redisPrefix),
+		WindowSeconds: 600,
+		MaxRequests:   10,
+		BlockSeconds:  600,
+		MessageKey:    "error.rate_limited",
+	}
+	registerRule := middleware.RateLimitRule{
+		Prefix:        fmt.Sprintf("%s:rate:register", redisPrefix),
+		WindowSeconds: 600,
+		MaxRequests:   10,
+		BlockSeconds:  600,
+		MessageKey:    "error.rate_limited",
+	}
+	passwordResetRule := middleware.RateLimitRule{
+		Prefix:        fmt.Sprintf("%s:rate:password_reset", redisPrefix),
+		WindowSeconds: 600,
+		MaxRequests:   10,
+		BlockSeconds:  600,
+		MessageKey:    "error.rate_limited",
 	}
 	guestReadRule := middleware.RateLimitRule{
 		Prefix:        fmt.Sprintf("%s:rate:guest_orders:read", redisPrefix),
@@ -243,28 +281,23 @@ func SetupRouter(cfg *config.Config, c *container.Container) *gin.Engine {
 	r.Use(middleware.RecoveryMiddleware())
 	r.Use(middleware.LoggerMiddleware(log))
 	r.Use(middleware.CORSMiddleware(cfg.CORS))
-	r.Use(middleware.CallbackRouteMiddleware(c.SettingService, paymentCallbackHandler, paymentWebhookHandler, upstreamHandler))
+	r.Use(middleware.BodySizeLimitMiddleware(defaultMaxRequestBodyBytes, multipartBodyLimit(cfg.Upload.MaxSize)))
+	r.Use(middleware.CallbackRouteMiddleware(c.SettingService, paymentCallbackHandler, paymentWebhookHandler, upstreamHandler, middleware.RateLimitCheck(redisClient, callbackRule, middleware.KeyByIP)))
 
 	// 静态文件服务（上传的图片）必须放在前面。
-	// SVG 强制下载并禁止脚本：即使上传校验被绕过，直接打开 /uploads/x.svg 也不会在站点源下执行脚本；
-	// <img src> 引用不受 Content-Disposition 影响，正常显示。
-	r.Group("/uploads", func(c *gin.Context) {
-		if strings.EqualFold(path.Ext(c.Request.URL.Path), ".svg") {
-			c.Header("Content-Disposition", "attachment")
-			c.Header("Content-Security-Policy", "sandbox; script-src 'none'")
-			c.Header("X-Content-Type-Options", "nosniff")
-		}
-	}).Static("/", "./uploads")
+	// 位图以外的文件强制下载并放进 CSP 沙箱：即使上传校验被绕过，直接打开 /uploads/x.html、x.svg
+	// 也不会在站点源下执行脚本；<img src> 等引用不受 Content-Disposition 影响，正常显示。
+	r.Group("/uploads", middleware.UploadsSecurityHeadersMiddleware()).Static("/", "./uploads")
 
 	// SEO 资源（动态生成）。
 	sitemaptransport.RegisterRoutes(r, sitemaptransport.NewHandler(c.SitemapService, sitemapbrand.New(c.SettingService)))
 
 	apiV1 := r.Group("/api/v1")
-	registerStorefrontRoutes(apiV1, cfg, c, publicContentHandler, publicCatalogHandler, publicCategoryHandler, userResellerHandler, userResellerProductSettingHandler, userResellerFinanceHandler, userResellerOrderHandler, userApiCredentialHandler, userAuditLogHandler, userGiftCardHandler, publicMemberLevelHandler, userProfileHandler, userEmailHandler, userPasswordHandler, userVerifyHandler, userTelegramOIDCHandler, userTelegramHandler, userGoogleHandler, userLoginHandler, user2FAHandler, publicConfigHandler, userCartHandler, userOrderHandler, guestOrderHandler, orderPreviewHandler, orderCreateHandler, paymentLatestHandler, paymentWriteHandler, userWalletHandler, redisClient, loginRule, guestReadRule, guestWriteRule, giftCardRedeemRule)
+	registerStorefrontRoutes(apiV1, cfg, c, publicContentHandler, publicCatalogHandler, publicCategoryHandler, userResellerHandler, userResellerProductSettingHandler, userResellerProductImagesHandler, userResellerFinanceHandler, userResellerOrderHandler, userApiCredentialHandler, userAuditLogHandler, userGiftCardHandler, publicMemberLevelHandler, userProfileHandler, userEmailHandler, userPasswordHandler, userVerifyHandler, userTelegramOIDCHandler, userTelegramHandler, userGoogleHandler, userLoginHandler, user2FAHandler, publicConfigHandler, userCartHandler, userOrderHandler, guestOrderHandler, orderPreviewHandler, orderCreateHandler, paymentLatestHandler, paymentWriteHandler, userWalletHandler, redisClient, loginRule, guestReadRule, guestWriteRule, giftCardRedeemRule, loginAccountRule, verifyCodeRule, registerRule, passwordResetRule)
 	registerUpstreamRoutes(apiV1, c, upstreamHandler, redisClient, upstreamAPIRule, callbackRule)
 	registerChannelRoutes(apiV1, c, channelHandler, channelMemberLevelHandler, channelGiftCardHandler, channelAffiliateHandler, channelTelegramBotHandler, channelWalletHandler, redisClient, channelAPIRule)
 	registerPaymentCallbackRoutes(apiV1, paymentCallbackHandler, paymentWebhookHandler, redisClient, callbackRule)
-	registerAdminRoutes(r, apiV1, cfg, c, adminLoginHandler, admin2FAHandler, adminUser2FAHandler, adminUserHandler, adminAuthzHandler, adminFulfillmentHandler, adminOrderHandler, adminOrderRefundHandler, adminContentHandler, adminDashboardHandler, adminMemberLevelHandler, adminApiCredentialHandler, adminAuditLogHandler, adminCardSecretHandler, adminCatalogCategoryHandler, adminCatalogProductHandler, adminCatalogProductMappingHandler, adminCouponHandler, adminGiftCardHandler, adminPromotionHandler, adminNotificationHandler, adminProcurementHandler, adminResellerManagementHandler, adminResellerProfileDetailHandler, adminResellerSiteConfigHandler, adminResellerProductSettingHandler, adminResellerOperationsHandler, adminResellerFinanceHandler, adminSettingsHandler, adminWalletHandler, adminPaymentHandler, adminPaymentChannelHandler, redisClient, adminLoginRule)
+	registerAdminRoutes(r, apiV1, cfg, c, adminLoginHandler, admin2FAHandler, adminUser2FAHandler, adminUserHandler, adminAuthzHandler, adminFulfillmentHandler, adminOrderHandler, adminOrderRefundHandler, adminContentHandler, adminDashboardHandler, adminMemberLevelHandler, adminApiCredentialHandler, adminAuditLogHandler, adminCardSecretHandler, adminCatalogCategoryHandler, adminCatalogProductHandler, adminCatalogProductMappingHandler, adminCouponHandler, adminGiftCardHandler, adminPromotionHandler, adminNotificationHandler, adminProcurementHandler, adminResellerManagementHandler, adminResellerProfileDetailHandler, adminResellerSiteConfigHandler, adminResellerProductSettingHandler, adminResellerOperationsHandler, adminResellerFinanceHandler, adminSettingsHandler, adminWalletHandler, adminPaymentHandler, adminPaymentChannelHandler, redisClient, adminLoginRule, adminLoginAccountRule)
 
 	// 健康检查
 	r.GET("/health", func(c *gin.Context) {
@@ -287,6 +320,22 @@ func SetupRouter(cfg *config.Config, c *container.Container) *gin.Engine {
 	}
 
 	return r
+}
+
+const (
+	// defaultMaxRequestBodyBytes 非上传请求的请求体上限
+	defaultMaxRequestBodyBytes = 8 << 20
+	// minMultipartBodyBytes 上传请求的最低上限，卡密 CSV 等导入文件可能大于图片上限
+	minMultipartBodyBytes = 32 << 20
+)
+
+// multipartBodyLimit 上传请求体上限：不低于配置的单文件上限加表单开销。
+func multipartBodyLimit(uploadMaxSize int64) int64 {
+	limit := uploadMaxSize + 1<<20
+	if limit < minMultipartBodyBytes {
+		return minMultipartBodyBytes
+	}
+	return limit
 }
 
 func configureTrustedProxies(engine *gin.Engine, trustedProxies []string) error {

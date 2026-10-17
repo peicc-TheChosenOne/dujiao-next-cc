@@ -1,6 +1,6 @@
 {
   "common": {
-    "siteName": "Dujiao-Next",
+    "siteName": "AI大玩家",
     "loading": "Loading...",
     "error": "Error",
     "success": "Success",
@@ -99,6 +99,12 @@
     "description": "Professional online studio providing quality products and services.",
     "quickLinks": "Quick Links",
     "contact": "Contact Us",
+    "wechat": "WeChat",
+    "email": "Email",
+    "copyContact": "Click to copy {name}",
+    "supportLink": "Contact support",
+    "copySuccess": "Copied to clipboard",
+    "copyFailed": "Copy failed. Please copy manually",
     "rights": "All rights reserved",
     "terms": "Terms of Service",
     "privacy": "Privacy Policy"
@@ -112,7 +118,7 @@
   },
   "home": {
     "hero": {
-      "title": "Dujiao-Next",
+      "title": "AI大玩家",
       "subtitle": "Professional Products and Services Provider",
       "cta": "Browse Products",
       "badge": "Next Gen Digital Store"
@@ -694,7 +700,7 @@
       "withdrawEmpty": "No withdraw records",
       "siteConfig": {
         "title": "Site Config",
-        "subtitle": "Manage reseller storefront branding, announcements, support, and SEO",
+        "subtitle": "Manage reseller storefront branding, banners, announcements, support, and SEO",
         "save": "Save Config",
         "saving": "Saving...",
         "loadFailed": "Failed to load site config, please try again later",
@@ -702,6 +708,48 @@
         "saveFailed": "Failed to save site config, please check your input and try again",
         "inactive": "Site config can be edited after reseller access is active.",
         "emptyLinks": "No footer links",
+        "banner": {
+          "title": "Homepage Banner",
+          "description": "Customize the homepage banner for your own reseller store.",
+          "reset": "Restore main store default",
+          "modes": {
+            "inherit": "Use main store default",
+            "custom": "Use my banner",
+            "hidden": "Hide banner"
+          },
+          "modeHints": {
+            "inherit": "Follow the main store banner until you customize your store.",
+            "custom": "Upload your own desktop and mobile homepage images.",
+            "hidden": "Hide the entire banner section on your store homepage."
+          },
+          "desktopImage": "Desktop banner",
+          "mobileImage": "Mobile banner (optional)",
+          "desktopHint": "Recommended: 1920 × 600. JPG / PNG / WebP / GIF supported; compress images before uploading.",
+          "mobileHint": "Recommended: 750 × 600. The desktop image is used when no mobile image is uploaded.",
+          "text": "Banner text",
+          "textHint": "Optional text in Simplified Chinese, Traditional Chinese and English. Leave blank for an image-only banner.",
+          "mainTitle": "Title",
+          "subtitle": "Subtitle",
+          "linkType": "Click action",
+          "linkTypes": {
+            "none": "No link",
+            "internal": "Internal page",
+            "external": "External link"
+          },
+          "linkValue": "Destination",
+          "openInNewTab": "Open in a new window",
+          "preview": "Preview",
+          "devices": {
+            "desktop": "Desktop",
+            "mobile": "Mobile"
+          },
+          "locales": {
+            "simplified": "简体",
+            "traditional": "繁體",
+            "english": "EN"
+          },
+          "emptyPreview": "Upload an image or enter text to preview your banner"
+        },
         "sections": {
           "brand": "Branding",
           "support": "Support Contacts",
@@ -719,6 +767,8 @@
         "tabs": {
           "brand": "Brand",
           "brandDescription": "Name and icons",
+          "banner": "Banner",
+          "bannerDescription": "Homepage image",
           "support": "Support",
           "supportDescription": "Contact channels",
           "content": "Content",
@@ -780,12 +830,20 @@
           "addLink": "Add Link",
           "remove": "Remove"
         },
+        "contactHints": {
+          "open": "Click to open",
+          "copy": "Click to copy"
+        },
         "fields": {
           "siteName": "Site Name",
           "logo": "Logo URL",
           "favicon": "Favicon URL",
           "telegram": "Telegram",
           "whatsapp": "WhatsApp",
+          "wechat": "WeChat",
+          "wechatPlaceholder": "Enter your support WeChat ID",
+          "qq": "QQ number",
+          "qqPlaceholder": "Example: 123456789",
           "email": "Support Email",
           "supportUrl": "Support URL",
           "announcementEnabled": "Enable Announcement",
@@ -864,7 +922,8 @@
         "pendingReview": "Pending Review",
         "active": "Active",
         "disabled": "Disabled",
-        "unknown": "Unknown Status"
+        "unknown": "Unknown Status",
+        "provisioning": "Connecting"
       },
       "domainVerification": {
         "pending": "Pending Verification",
@@ -1050,6 +1109,22 @@
         "codeRequired": "Please enter the code",
         "recoveryRequired": "Please enter a recovery code",
         "verifyFailed": "Verification failed, please check your input"
+      },
+      "enrollment": {
+        "title": "Set up two-factor authentication",
+        "subtitle": "Complete setup to access your reseller console",
+        "hint": "Reseller accounts must use an authenticator. Scan the QR code with 1Password or another TOTP app, or enter the key manually. If the platform reset your authenticator, set it up again.",
+        "qrAlt": "Authenticator setup QR code",
+        "confirmBind": "Confirm setup",
+        "download": "Download recovery codes",
+        "saved": "I have safely saved my recovery codes",
+        "continue": "Open reseller console",
+        "copyFailed": "Copy failed. Download or manually save your recovery codes.",
+        "managed": "Login verification is managed by the platform. Contact an administrator to replace or reset your authenticator.",
+        "paused": "The platform paused login verification for this account. Your authenticator binding is retained.",
+        "recoveryHint": "These recovery codes are shown once. Save them safely before leaving this page.",
+        "policyRequired": "Required by platform",
+        "policyPaused": "Paused by platform"
       }
     },
     "telegramCallback": {
@@ -1343,7 +1418,7 @@
       "apply": "Application",
       "domains": "Domains",
       "site": "Store settings",
-      "products": "Product pricing",
+      "products": "Product management",
       "orders": "Sales orders",
       "finance": "Finance",
       "ledger": "Ledger",
@@ -1413,6 +1488,24 @@
       "systemDomains": "System domains",
       "customDomains": "Custom domains",
       "workspaceTitle": "Domain status",
+      "groupSummary": "Custom domain groups: {count} · Available addresses: {active}",
+      "groupCount": "{count} groups",
+      "groupAvailability": "{active} / {total} addresses available",
+      "addDomain": "Add custom domain",
+      "visitStore": "Visit store",
+      "copyAddress": "Copy address",
+      "copyTarget": "Copy DNS target",
+      "dnsRecordsTitle": "Configure these two DNS records",
+      "recordName": "Record name",
+      "recordType": "Type",
+      "recordTarget": "Target",
+      "connectionDetails": "View DNS configuration and connection details",
+      "connectionIssue": "Connection issue",
+      "bindingSummary": "Configure DNS for the base domain and www, then submit your domain. The system verifies DNS and provisions HTTPS automatically. Your store becomes available after administrator approval.",
+      "dnsHelp": "DNS setup help",
+      "apexHelp": "You may use any DNS provider. The base domain requires CNAME flattening or ALIAS support; contact the platform if unavailable. Do not include http://, https:// or a path.",
+      "cloudflareHelp": "If the domain uses Cloudflare with the proxy enabled (orange cloud), set SSL/TLS mode to Full (strict).",
+      "systemOptional": "Not assigned. Your current custom domain remains available. Contact an administrator if you need a system subdomain.",
       "workspaceDescription": "Review the primary domain, system subdomain, and custom domain availability in one place.",
       "primaryBadge": "Primary entry",
       "primaryTitle": "Primary domain",
@@ -1439,11 +1532,32 @@
       "tableActions": "Actions",
       "visit": "Visit",
       "verifyTitle": "Domain verification",
-      "verifyDesc": "A custom domain enters pending review after submission: first point its DNS (CNAME/A record) to the platform, then wait for manual review by the platform — it goes live once verified."
+      "verifyDesc": "A custom domain enters pending review after submission: first point its DNS (CNAME/A record) to the platform, then wait for manual review by the platform — it goes live once verified.",
+      "provisioning": {
+        "connecting": "Connecting",
+        "dns_pending": "Waiting for DNS",
+        "certificate_pending": "Issuing HTTPS certificate",
+        "ready": "DNS / HTTPS ready",
+        "deleting": "Removing binding",
+        "disabled": "Binding removed",
+        "profile_inactive": "Reseller account disabled"
+      },
+      "errors": {
+        "api_unavailable": "Connection service is unavailable; automatic retry is scheduled.",
+        "quota_exceeded": "Platform domain capacity is exhausted. Contact the administrator.",
+        "rate_limited": "Connection service is busy; automatic retry is scheduled.",
+        "access_denied": "Platform permissions need correction. Contact the administrator.",
+        "validation_failed": "Validation failed. Check DNS and CAA records, then retry.",
+        "not_found": "Remote binding is missing; it will be recreated.",
+        "domain_conflict": "The root or www hostname belongs to another store. Contact the administrator."
+      },
+      "bindingInstructions": "Point the root and www CNAME records to the target below, then submit the root domain. DNS and HTTPS are verified automatically before administrator review. The store opens after approval. Your DNS provider must support CNAME flattening or ALIAS at the root; otherwise contact the platform. If your domain is on Cloudflare with the proxy (orange cloud) on, set the SSL/TLS mode to Full (strict).",
+      "refreshValidation": "Check again",
+      "submittedForValidation": "Domain submitted. DNS and HTTPS validation is running; administrator review follows."
     },
     "site": {
       "title": "Store Settings",
-      "description": "Configure reseller storefront name, announcements, support, navigation, and theme basics.",
+      "description": "Configure reseller storefront name, homepage banner, announcements, support, navigation, and theme basics.",
       "previewStore": "Preview site",
       "cards": {
         "brand": "Brand",
@@ -1457,25 +1571,30 @@
       },
       "readiness": {
         "title": "Setup progress",
-        "description": "Complete branding and support first, then fill in SEO, announcements, footer links, and navigation.",
+        "description": "Complete branding, banner, and support first, then fill in SEO, announcements, footer links, and navigation.",
         "configured": "Configured",
         "pending": "Pending",
         "brand": "Brand",
+        "banner": "Banner",
         "support": "Support",
         "seo": "SEO",
         "announcement": "Announcement"
       }
     },
     "products": {
-      "title": "Product Pricing",
-      "description": "Control storefront visibility and maintain product or SKU pricing rules.",
+      "tabs": {
+        "images": "Product images",
+        "pricing": "Product pricing"
+      },
+      "title": "Product management",
+      "description": "Customize your product images and manage listing status and retail prices.",
       "previewStore": "Preview storefront",
       "viewOrders": "View orders",
       "focusTitle": "Configuration focus",
       "focusDescription": "Start with high-converting products, then refine SKU pricing and visibility rules.",
       "cards": {
         "defaultMarkup": "Default markup",
-        "defaultMarkupDescription": "Products without individual rules use the default markup to generate reseller prices.",
+        "defaultMarkupDescription": "Unpriced variants start with the minimum retail price and take effect after saving. Default markup is not used to prefill prices.",
         "maxMarkup": "Max markup",
         "maxMarkupDescription": "A cap of 0 means unlimited; pricing above the admin limit will be rejected.",
         "storefront": "Storefront",
@@ -1486,9 +1605,9 @@
         "listing": "Listing scope",
         "listingDescription": "Hide products or SKUs that should not be sold through the reseller storefront.",
         "pricing": "Pricing strategy",
-        "pricingDescription": "Combine inherited markup, percent markup, fixed markup, and fixed price rules as needed.",
+        "pricingDescription": "Set and save a fixed retail price per variant based on its supply price.",
         "sku": "SKU overrides",
-        "skuDescription": "Prioritize detailed rules for high-value or high-stock SKUs."
+        "skuDescription": "Save retail prices and listing status independently for each variant."
       }
     },
     "finance": {
@@ -1518,7 +1637,7 @@
       "status": "Status",
       "domain": "Source domain",
       "totalAmount": "Revenue",
-      "baseAmount": "Base amount",
+      "baseAmount": "Supply amount",
       "profitAmount": "Profit",
       "profitStatus": "Profit status",
       "buyer": "Buyer",
@@ -1557,7 +1676,7 @@
       "product": "Product",
       "quantity": "Quantity",
       "unitPrice": "Sale unit price",
-      "baseUnit": "Base unit price",
+      "baseUnit": "Supply unit price",
       "profitSnapshot": "Profit snapshot",
       "timeline": "Order progress",
       "tlCreated": "Created",
@@ -1724,5 +1843,88 @@
     "authInvalid": "Credentials mismatch, please try again",
     "authSubmit": "Save and search",
     "authClear": "Clear saved info"
+  },
+  "supplyPricing": {
+    "product": "Product",
+    "supply": "Supply price",
+    "retail": "My retail price",
+    "profit": "Estimated profit",
+    "listing": "Listing",
+    "listingSaveHint": "Applies after saving",
+    "resizeColumn": "Resize {column} column",
+    "action": "Action",
+    "minimum": "Minimum retail",
+    "maximum": "Maximum retail",
+    "defaultSpec": "Default variant",
+    "listed": "Listed",
+    "unlisted": "Unlisted",
+    "unpriced": "Not priced",
+    "initialPriceHint": "Starts at minimum retail; takes effect after saving",
+    "unsaved": "Pending save",
+    "save": "Save & apply",
+    "saving": "Saving",
+    "saved": "Saved",
+    "saveFailed": "Save failed",
+    "loadFailed": "Load failed",
+    "loading": "Loading",
+    "restoreProduct": "Restore product visibility",
+    "unsavedPrompt": "There are unsaved prices. Save, discard, or stay here. Failed rows will be preserved.",
+    "discard": "Discard changes",
+    "saveAll": "Save and continue",
+    "invalid": "Enter a positive amount with at most two decimal places",
+    "supply_missing": "Supply price not configured",
+    "supply_below_cost": "Supply is below cost; sales paused",
+    "range_conflict": "Minimum exceeds maximum; sales paused",
+    "below_minimum": "Retail is below the minimum",
+    "markup_exceeded": "Retail exceeds the maximum",
+    "sku_inactive": "Variant disabled",
+    "product_hidden": "Product hidden",
+    "changed": "Product pricing changed. Review the updated price and confirm again."
+  },
+  "resellerProductImages": {
+    "galleryTitle": "Product images",
+    "galleryDescription": "Used for the listing cover and product gallery. The first image is the cover.",
+    "noPlatformDetail": "The platform has no detail content. You can upload a store detail image.",
+    "description": "Customize your product gallery and one detail image. A custom detail image replaces the platform detail body. The platform maintains names, descriptions, specifications, stock and fulfillment. Changes save automatically.",
+    "search": "Search products",
+    "searchButton": "Search",
+    "refresh": "Refresh",
+    "upload": "Upload images",
+    "restore": "Restore platform images",
+    "platform": "Platform images",
+    "custom": "Custom images",
+    "followPlatform": "Follows platform updates",
+    "cover": "Cover",
+    "setCover": "Set as cover",
+    "previous": "Move earlier",
+    "next": "Move later",
+    "delete": "Delete image",
+    "noImages": "No images",
+    "limits": "PNG, JPG, GIF or WebP, up to 500KB each and 5 custom images per product. The first image is the cover.",
+    "saving": "Saving…",
+    "saved": "Saved",
+    "uploading": "Uploading {current}/{total}…",
+    "countError": "Up to 5 custom images per product. Successfully uploaded images have been kept.",
+    "sizeError": "Images must not be empty and must be at most 500KB (512000 bytes).",
+    "formatError": "Only PNG, JPG, GIF or WebP images are supported.",
+    "refreshed": "Current images were reloaded. Check them before trying again.",
+    "saveFailed": "Failed to save. Please try again.",
+    "loadFailed": "Failed to load images. Please try again.",
+    "refreshFailed": "Cannot confirm the result. Refresh images before continuing.",
+    "waitSaving": "Images are saving. Please wait before leaving.",
+    "loading": "Loading…",
+    "empty": "No matching products",
+    "imageAlt": "Product image {index}",
+    "detailTitle": "Product detail image",
+    "detailDescription": "Replace the detail body on your storefront while keeping the platform product name, description and specifications.",
+    "customDetail": "Custom detail image",
+    "platformDetail": "Platform details",
+    "restoreDetail": "Restore platform details",
+    "replaceDetail": "Replace detail image",
+    "uploadDetail": "Upload detail image",
+    "followPlatformDetail": "No custom detail image. Following the platform detail body.",
+    "detailLimits": "One PNG, JPG, GIF or WebP detail image, up to 500KB. Uploading a new image replaces the previous one.",
+    "detailCountError": "Upload only one detail image.",
+    "detailAlt": "Custom product detail image"
   }
 }

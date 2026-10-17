@@ -1,9 +1,9 @@
 package application
 
 import (
-	"errors"
-	"strconv"
+	"mime/multipart"
 	"strings"
+	"time"
 
 	resellercontract "github.com/dujiao-next/internal/modules/reseller/contract"
 
@@ -11,10 +11,279 @@ import (
 
 	productcontract "github.com/dujiao-next/internal/modules/catalog/product/contract"
 	productdomain "github.com/dujiao-next/internal/modules/catalog/product/domain"
+	uploadcontract "github.com/dujiao-next/internal/modules/upload/contract"
+	"github.com/dujiao-next/internal/shared/jsonslice"
+	"github.com/google/uuid"
 
 	"github.com/dujiao-next/internal/shared/money"
 	"github.com/shopspring/decimal"
 )
+
+const ProductImageMaxSize int64 = 500 * 1024
+const ProductImageMaxCount = 5
+
+type ProductImageUploader interface {
+	SaveFileWithMeta(file *multipart.FileHeader, scene string) (*uploadcontract.Result, error)
+}
+
+type ProductImageService struct {
+	store    resellercontract.ProductImageStore
+	uploader ProductImageUploader
+}
+
+type ProductImageState struct {
+	Product productdomain.Product
+	Config  resellerdomain.ProductImages
+	Profile *resellerdomain.Profile
+}
+
+func NewProductImageService(store resellercontract.ProductImageStore, uploader ProductImageUploader) *ProductImageService {
+	return &ProductImageService{store: store, uploader: uploader}
+}
+
+func (s *ProductImageService) activeProfile(userID uint) (*resellerdomain.Profile, error) {
+	profile, err := s.store.GetProfileByUserID(userID)
+	if err != nil {
+		return nil, err
+	}
+	if profile == nil {
+		return nil, resellercontract.ErrNotOpened
+	}
+	if profile.Status != resellerdomain.ProfileStatusActive {
+		return nil, resellercontract.ErrProfileInactive
+	}
+	return profile, nil
+}
+
+func (s *ProductImageService) ListUserProductImages(userID uint, input ProductSettingUserListInput) ([]ProductImageState, int64, error) {
+	profile, err := s.activeProfile(userID)
+	if err != nil {
+		return nil, 0, err
+	}
+	rows, total, err := s.store.ListProductsWithSettings(resellercontract.ProductSettingListFilter{ResellerID: profile.ID, OnlyActive: true, Page: input.Page, PageSize: input.PageSize, Keyword: input.Keyword})
+	if err != nil {
+		return nil, 0, err
+	}
+	ids := make([]uint, 0, len(rows))
+	for _, row := range rows {
+		ids = append(ids, row.Product.ID)
+	}
+	configs, err := s.store.ListProductImages(profile.ID, ids)
+	if err != nil {
+		return nil, 0, err
+	}
+	byID := make(map[uint]resellerdomain.ProductImages, len(configs))
+	for _, config := range configs {
+		byID[config.ProductID] = config
+	}
+	states := make([]ProductImageState, 0, len(rows))
+	for _, row := range rows {
+		states = append(states, ProductImageState{Product: row.Product, Config: byID[row.Product.ID]})
+	}
+	return states, total, nil
+}
+
+func (s *ProductImageService) GetUserProductImages(userID, productID uint) (*ProductImageState, error) {
+	profile, err := s.activeProfile(userID)
+	if err != nil {
+		return nil, err
+	}
+	state, err := s.getProductImages(profile, productID)
+	if err == nil && (!state.Product.IsActive || !state.Product.Category.IsActive || state.Product.Category.DeletedAt != nil) {
+		return nil, productcontract.ErrNotFound
+	}
+	return state, err
+}
+
+func (s *ProductImageService) getProductImages(profile *resellerdomain.Profile, productID uint) (*ProductImageState, error) {
+	row, err := s.store.GetProductWithSettings(profile.ID, productID)
+	if err != nil {
+		return nil, err
+	}
+	if row == nil {
+		return nil, productcontract.ErrNotFound
+	}
+	configs, err := s.store.ListProductImages(profile.ID, []uint{productID})
+	if err != nil {
+		return nil, err
+	}
+	config := resellerdomain.ProductImages{ResellerID: profile.ID, ProductID: productID, Images: jsonslice.Strings{}}
+	if len(configs) > 0 {
+		config = configs[0]
+	}
+	return &ProductImageState{Product: row.Product, Config: config, Profile: profile}, nil
+}
+
+func (s *ProductImageService) ListAdminProductImages(input resellercontract.ProductImageAdminFilter) ([]ProductImageState, int64, error) {
+	if input.Scope != "" && input.Scope != "customized" && input.Scope != "all" || input.Scope == "all" && input.ResellerID == 0 {
+		return nil, 0, resellercontract.ErrProductImagesInvalid
+	}
+	for _, source := range []string{input.ImageSource, input.DetailSource} {
+		if source != "" && source != "custom" && source != "platform" {
+			return nil, 0, resellercontract.ErrProductImagesInvalid
+		}
+	}
+	rows, total, err := s.store.ListAdminProductImages(input)
+	if err != nil {
+		return nil, 0, err
+	}
+	states := make([]ProductImageState, 0, len(rows))
+	for _, row := range rows {
+		states = append(states, ProductImageState{Product: row.Product, Config: row.Config, Profile: &row.Profile})
+	}
+	return states, total, nil
+}
+
+func (s *ProductImageService) GetAdminProductImages(resellerID, productID uint) (*ProductImageState, error) {
+	profile, err := s.store.GetProfileByID(resellerID)
+	if err != nil {
+		return nil, err
+	}
+	if profile == nil {
+		return nil, productcontract.ErrNotFound
+	}
+	return s.getProductImages(profile, productID)
+}
+
+// 管理员通过受信任的分销商资料定位用户，所有写操作复用前台的范围和版本校验。
+func (s *ProductImageService) adminImageUser(resellerID uint) (uint, error) {
+	profile, err := s.store.GetProfileByID(resellerID)
+	if err != nil {
+		return 0, err
+	}
+	if profile == nil {
+		return 0, productcontract.ErrNotFound
+	}
+	if profile.Status != resellerdomain.ProfileStatusActive {
+		return 0, resellercontract.ErrProfileInactive
+	}
+	return profile.UserID, nil
+}
+
+func (s *ProductImageService) UploadAdminProductImage(resellerID, productID uint, file *multipart.FileHeader, revision uint64, operationID string, detail bool) (*ProductImageState, error) {
+	uid, err := s.adminImageUser(resellerID)
+	if err != nil {
+		return nil, err
+	}
+	if detail {
+		return s.UploadUserProductDetailImage(uid, productID, file, revision, operationID)
+	}
+	return s.UploadUserProductImage(uid, productID, file, revision, operationID)
+}
+
+func (s *ProductImageService) UpdateAdminProductImages(resellerID, productID uint, images []string, revision uint64, operationID string) (*ProductImageState, error) {
+	uid, err := s.adminImageUser(resellerID)
+	if err != nil {
+		return nil, err
+	}
+	return s.UpdateUserProductImages(uid, productID, images, revision, operationID)
+}
+
+func (s *ProductImageService) ResetAdminProductDetailImage(resellerID, productID uint, revision uint64, operationID string) (*ProductImageState, error) {
+	uid, err := s.adminImageUser(resellerID)
+	if err != nil {
+		return nil, err
+	}
+	return s.ResetUserProductDetailImage(uid, productID, revision, operationID)
+}
+
+func (s *ProductImageService) saveImages(state *ProductImageState, images []string, revision uint64, operationID string) (*ProductImageState, error) {
+	if _, err := uuid.Parse(operationID); err != nil || len(operationID) != 36 {
+		return nil, resellercontract.ErrProductImagesInvalid
+	}
+	config := state.Config
+	config.Images = append(jsonslice.Strings{}, images...)
+	config.OperationID = operationID
+	if err := s.store.SaveProductImages(config, revision); err != nil {
+		return nil, err
+	}
+	config.Revision = revision + 1
+	config.UpdatedAt = time.Now()
+	return &ProductImageState{Product: state.Product, Config: config, Profile: state.Profile}, nil
+}
+
+func (s *ProductImageService) UpdateUserProductImages(userID, productID uint, images []string, revision uint64, operationID string) (*ProductImageState, error) {
+	state, err := s.GetUserProductImages(userID, productID)
+	if err != nil {
+		return nil, err
+	}
+	if state.Config.Revision != revision {
+		return nil, resellercontract.ErrProductImagesChanged
+	}
+	if len(images) > ProductImageMaxCount {
+		return nil, resellercontract.ErrProductImagesLimit
+	}
+	allowed := make(map[string]bool, len(state.Config.Images))
+	for _, image := range state.Config.Images {
+		allowed[image] = true
+	}
+	for _, image := range images {
+		if !allowed[image] {
+			return nil, resellercontract.ErrProductImagesInvalid
+		}
+		delete(allowed, image) // 不允许重复图片，也不能引入其他商品/店铺或外部地址。
+	}
+	return s.saveImages(state, images, revision, operationID)
+}
+
+func (s *ProductImageService) UploadUserProductImage(userID, productID uint, file *multipart.FileHeader, revision uint64, operationID string) (*ProductImageState, error) {
+	state, err := s.GetUserProductImages(userID, productID)
+	if err != nil {
+		return nil, err
+	}
+	if state.Config.Revision != revision {
+		return nil, resellercontract.ErrProductImagesChanged
+	}
+	if len(state.Config.Images) >= ProductImageMaxCount {
+		return nil, resellercontract.ErrProductImagesLimit
+	}
+	result, err := s.uploadImageFile(file, operationID)
+	if err != nil {
+		return nil, err
+	}
+	images := append(append([]string{}, state.Config.Images...), result.URL)
+	return s.saveImages(state, images, revision, operationID)
+}
+
+func (s *ProductImageService) uploadImageFile(file *multipart.FileHeader, operationID string) (*uploadcontract.Result, error) {
+	if file == nil || file.Size <= 0 || file.Size > ProductImageMaxSize {
+		return nil, resellercontract.ErrProductImagesInvalid
+	}
+	if _, err := uuid.Parse(operationID); err != nil || len(operationID) != 36 {
+		return nil, resellercontract.ErrProductImagesInvalid
+	}
+	// 上传器由装配层提供独立的 PNG/JPG/GIF/WebP 和 500KB 策略，不改变站点 Logo/Banner 策略。
+	return s.uploader.SaveFileWithMeta(file, "reseller")
+}
+
+// UploadUserProductDetailImage 替换单张详情图，保留独立的商品主图。
+func (s *ProductImageService) UploadUserProductDetailImage(userID, productID uint, file *multipart.FileHeader, revision uint64, operationID string) (*ProductImageState, error) {
+	state, err := s.GetUserProductImages(userID, productID)
+	if err != nil {
+		return nil, err
+	}
+	if state.Config.Revision != revision {
+		return nil, resellercontract.ErrProductImagesChanged
+	}
+	result, err := s.uploadImageFile(file, operationID)
+	if err != nil {
+		return nil, err
+	}
+	state.Config.DetailImage = result.URL
+	return s.saveImages(state, state.Config.Images, revision, operationID)
+}
+
+func (s *ProductImageService) ResetUserProductDetailImage(userID, productID uint, revision uint64, operationID string) (*ProductImageState, error) {
+	state, err := s.GetUserProductImages(userID, productID)
+	if err != nil {
+		return nil, err
+	}
+	if state.Config.Revision != revision {
+		return nil, resellercontract.ErrProductImagesChanged
+	}
+	state.Config.DetailImage = ""
+	return s.saveImages(state, state.Config.Images, revision, operationID)
+}
 
 // ProductSettingService 分销商品改价/上架配置用例。
 type ProductSettingService struct {
@@ -34,6 +303,8 @@ type ProductSettingInput struct {
 	FixedMarkupAmount decimal.Decimal
 	FixedPriceAmount  decimal.Decimal
 	SortOrder         int
+	PricingRevision   string
+	VisibilityOnly    bool
 }
 
 type ProductSettingSaveInput struct {
@@ -78,7 +349,7 @@ type ProductSettingListRow struct {
 }
 
 // ProductSettingPreviewItem 表示某个商品级（SKUID=0）或 SKU 级规则在「拟用配置」下的预览结果。
-// 复用与保存/下单完全一致的 ResolveUnitAmount + ValidateUnitAmount，确保预览价与实际成交价零分歧。
+// 复用与保存/下单完全一致的 ResolveSupplyQuote，确保预览价与实际成交价零分歧。
 type ProductSettingPreviewItem struct {
 	SKUID          uint
 	IsListed       bool
@@ -142,7 +413,12 @@ func (s *ProductSettingService) ResetUserProductSetting(userID, productID, skuID
 	if err != nil {
 		return err
 	}
-	return s.store.DeleteSetting(profile.ID, productID, skuID)
+	return s.store.WithinProductSettingTransaction(func(store resellercontract.ProductSettingStore) error {
+		if err := store.LockPricingInputs(profile.ID, []uint{productID}); err != nil {
+			return err
+		}
+		return store.DeleteSetting(profile.ID, productID, skuID)
+	})
 }
 
 func (s *ProductSettingService) ListAdminSettings(input ProductSettingAdminListInput) ([]resellerdomain.ProductSetting, int64, error) {
@@ -189,7 +465,12 @@ func (s *ProductSettingService) ResetAdminProductSetting(resellerID, productID, 
 	if err != nil {
 		return err
 	}
-	return s.store.DeleteSetting(profile.ID, productID, skuID)
+	return s.store.WithinProductSettingTransaction(func(store resellercontract.ProductSettingStore) error {
+		if err := store.LockPricingInputs(profile.ID, []uint{productID}); err != nil {
+			return err
+		}
+		return store.DeleteSetting(profile.ID, productID, skuID)
+	})
 }
 
 func (s *ProductSettingService) requireActiveProfileByUser(userID uint) (*resellerdomain.Profile, error) {
@@ -257,107 +538,92 @@ func (s *ProductSettingService) saveSettings(profile *resellerdomain.Profile, pr
 	if profile == nil || productID == 0 {
 		return productcontract.ErrNotFound
 	}
-	product, err := s.productRepo.GetAdminByID(strconv.FormatUint(uint64(productID), 10))
-	if err != nil {
-		return err
+	if len(input.Settings) == 0 {
+		return resellercontract.ErrPricingModeInvalid
 	}
-	if product == nil {
-		return productcontract.ErrNotFound
-	}
-	normalizedSettings := make([]resellerdomain.ProductSetting, 0, len(input.Settings))
-	for _, item := range input.Settings {
-		normalized, err := normalizeProductSettingInput(profile, product, item)
+	return s.store.WithinProductSettingTransaction(func(store resellercontract.ProductSettingStore) error {
+		if err := store.LockPricingInputs(profile.ID, []uint{productID}); err != nil {
+			return err
+		}
+		row, err := store.GetProductWithSettings(profile.ID, productID)
 		if err != nil {
 			return err
 		}
-		normalized.ResellerID = profile.ID
-		normalized.ProductID = product.ID
-		normalizedSettings = append(normalizedSettings, normalized)
-	}
-	return s.store.WithinProductSettingTransaction(func(store resellercontract.ProductSettingStore) error {
-		for _, setting := range normalizedSettings {
-			if _, err := store.UpsertSetting(setting); err != nil {
+		if row == nil {
+			return productcontract.ErrNotFound
+		}
+		profile, err := store.GetProfileByID(profile.ID)
+		if err != nil {
+			return err
+		}
+		if profile == nil || profile.Status != resellerdomain.ProfileStatusActive {
+			return resellercontract.ErrProfileInactive
+		}
+		parents, skus := resellercontract.BuildSettingIndexes(row.Settings)
+		// 版本校验使用保存前的展示状态，避免本批父级修改使后续 SKU 误报冲突。
+		originalParent := parents[productID]
+		seen := map[uint]bool{}
+		for _, item := range input.Settings {
+			if seen[item.SKUID] {
+				return resellercontract.ErrPricingModeInvalid
+			}
+			seen[item.SKUID] = true
+			var current *resellerdomain.ProductSetting
+			if item.SKUID == 0 {
+				current = parents[productID]
+			} else {
+				current = skus[resellercontract.SettingKey{ProductID: productID, SKUID: item.SKUID}]
+			}
+			setting := resellerdomain.ProductSetting{ResellerID: profile.ID, ProductID: productID, SKUID: item.SKUID, IsListed: item.IsListed, PricingMode: resellerdomain.PricingModeInherit, SortOrder: item.SortOrder}
+			if current != nil {
+				setting = *current
+				setting.IsListed = item.IsListed
+			}
+			if item.SKUID == 0 {
+				if item.PricingMode != "" && item.PricingMode != resellerdomain.PricingModeInherit {
+					return resellercontract.ErrPricingModeInvalid
+				}
+				setting.PricingMode = resellerdomain.PricingModeInherit
+			} else {
+				sku := findProductSKU(row.Product.SKUs, item.SKUID)
+				if sku == nil {
+					return productcontract.ErrProductSKUInvalid
+				}
+				quote := resellercontract.ResolveSupplyQuote(profile, *sku, originalParent, current)
+				if !item.VisibilityOnly {
+					if item.PricingMode != resellerdomain.PricingModeFixedPrice {
+						return resellercontract.ErrPricingModeInvalid
+					}
+					if item.PricingRevision == "" || item.PricingRevision != quote.Revision {
+						return resellercontract.ErrPricingChanged
+					}
+					if !item.FixedPriceAmount.Equal(item.FixedPriceAmount.Round(2)) || item.FixedPriceAmount.Abs().GreaterThanOrEqual(decimal.NewFromInt(1).Shift(18)) {
+						return resellercontract.ErrPriceBelowBase
+					}
+					setting.PricingMode = resellerdomain.PricingModeFixedPrice
+					setting.FixedPriceAmount = money.FromDecimal(item.FixedPriceAmount)
+				}
+				if !item.VisibilityOnly || setting.IsListed {
+					if err := resellercontract.ResolveSupplyQuote(profile, *sku, parents[productID], &setting).ValidationError(); err != nil {
+						return err
+					}
+				}
+			}
+			saved, err := store.UpsertSetting(setting)
+			if err != nil {
 				return err
+			}
+			if item.SKUID == 0 {
+				parents[productID] = saved
+			} else {
+				skus[resellercontract.SettingKey{ProductID: productID, SKUID: item.SKUID}] = saved
 			}
 		}
 		return nil
 	})
 }
 
-func normalizeProductSettingInput(profile *resellerdomain.Profile, product *productdomain.Product, input ProductSettingInput) (resellerdomain.ProductSetting, error) {
-	if product == nil {
-		return resellerdomain.ProductSetting{}, productcontract.ErrNotFound
-	}
-	mode := strings.TrimSpace(input.PricingMode)
-	if mode == "" {
-		mode = resellerdomain.PricingModeInherit
-	}
-	switch mode {
-	case resellerdomain.PricingModeInherit, resellerdomain.PricingModeMarkupPercent, resellerdomain.PricingModeFixedMarkup, resellerdomain.PricingModeFixedPrice:
-	default:
-		return resellerdomain.ProductSetting{}, resellercontract.ErrPricingModeInvalid
-	}
-	setting := resellerdomain.ProductSetting{
-		SKUID:             input.SKUID,
-		IsListed:          input.IsListed,
-		PricingMode:       mode,
-		MarkupPercent:     money.FromDecimal(input.MarkupPercent.Round(2)),
-		FixedMarkupAmount: money.FromDecimal(input.FixedMarkupAmount.Round(2)),
-		FixedPriceAmount:  money.FromDecimal(input.FixedPriceAmount.Round(2)),
-		SortOrder:         input.SortOrder,
-	}
-	if !setting.IsListed {
-		return setting, nil
-	}
-	if input.SKUID > 0 {
-		sku := findProductSKU(product.SKUs, input.SKUID)
-		if sku == nil || !sku.IsActive {
-			return resellerdomain.ProductSetting{}, productcontract.ErrProductSKUInvalid
-		}
-		price, _, err := ResolveUnitAmount(profile, nil, &setting, sku.PriceAmount.Decimal.Round(2))
-		if err != nil {
-			return resellerdomain.ProductSetting{}, err
-		}
-		if err := ValidateUnitAmount(profile, sku, sku.PriceAmount.Decimal.Round(2), price); err != nil {
-			return resellerdomain.ProductSetting{}, err
-		}
-		return setting, nil
-	}
-	if len(product.SKUs) == 0 {
-		basePrice := product.PriceAmount.Decimal.Round(2)
-		price, _, err := ResolveUnitAmount(profile, &setting, nil, basePrice)
-		if err != nil {
-			return resellerdomain.ProductSetting{}, err
-		}
-		if err := ValidateUnitAmount(profile, nil, basePrice, price); err != nil {
-			return resellerdomain.ProductSetting{}, err
-		}
-		costPrice := product.CostPriceAmount.Decimal.Round(2)
-		if costPrice.GreaterThan(decimal.Zero) && price.LessThan(costPrice) {
-			return resellerdomain.ProductSetting{}, resellercontract.ErrPriceBelowBase
-		}
-		return setting, nil
-	}
-	for i := range product.SKUs {
-		sku := &product.SKUs[i]
-		if !sku.IsActive {
-			continue
-		}
-		price, _, err := ResolveUnitAmount(profile, &setting, nil, sku.PriceAmount.Decimal.Round(2))
-		if err != nil {
-			return resellerdomain.ProductSetting{}, err
-		}
-		if err := ValidateUnitAmount(profile, sku, sku.PriceAmount.Decimal.Round(2), price); err != nil {
-			return resellerdomain.ProductSetting{}, err
-		}
-	}
-	return setting, nil
-}
-
 func (s *ProductSettingService) previewSettings(profile *resellerdomain.Profile, productID uint, input ProductSettingSaveInput) ([]ProductSettingPreviewItem, error) {
-	if profile == nil || productID == 0 {
-		return nil, productcontract.ErrNotFound
-	}
 	row, err := s.store.GetProductWithSettings(profile.ID, productID)
 	if err != nil {
 		return nil, err
@@ -365,77 +631,43 @@ func (s *ProductSettingService) previewSettings(profile *resellerdomain.Profile,
 	if row == nil {
 		return nil, productcontract.ErrNotFound
 	}
-	product := row.Product
-
-	var productSetting *resellerdomain.ProductSetting
-	skuSettings := map[uint]*resellerdomain.ProductSetting{}
+	merged := append([]resellerdomain.ProductSetting(nil), row.Settings...)
 	for _, item := range input.Settings {
-		setting, err := buildPreviewSetting(item)
+		if item.SKUID != 0 && findProductSKU(row.Product.SKUs, item.SKUID) == nil {
+			return nil, productcontract.ErrProductSKUInvalid
+		}
+		next, err := buildPreviewSetting(item)
 		if err != nil {
 			return nil, err
 		}
-		setting.ResellerID = profile.ID
-		setting.ProductID = product.ID
-		if item.SKUID == 0 {
-			ps := setting
-			productSetting = &ps
-		} else {
-			ss := setting
-			skuSettings[item.SKUID] = &ss
-		}
-	}
-
-	items := make([]ProductSettingPreviewItem, 0, len(product.SKUs)+1)
-
-	productBase := product.PriceAmount.Decimal.Round(2)
-	productItem := ProductSettingPreviewItem{
-		SKUID:     0,
-		IsListed:  productSetting == nil || productSetting.IsListed,
-		BasePrice: productBase,
-		Valid:     true,
-	}
-	if productSetting != nil && productSetting.IsListed {
-		price, _, _ := ResolveUnitAmount(profile, productSetting, nil, productBase)
-		productItem.EffectivePrice = price.Round(2)
-		if len(product.SKUs) == 0 {
-			perr := ValidateUnitAmount(profile, nil, productBase, price)
-			if perr == nil {
-				cost := product.CostPriceAmount.Decimal.Round(2)
-				if cost.GreaterThan(decimal.Zero) && price.LessThan(cost) {
-					perr = resellercontract.ErrPriceBelowBase
+		next.ProductID = productID
+		replaced := false
+		for i := range merged {
+			if merged[i].SKUID == item.SKUID {
+				if item.VisibilityOnly {
+					next = merged[i]
+					next.IsListed = item.IsListed
 				}
+				merged[i] = next
+				replaced = true
+				break
 			}
-			productItem.Valid = perr == nil
-			productItem.ErrorCode = previewErrorCode(perr)
-		} else {
-			productItem.Valid, productItem.ErrorCode = previewValidateProductRuleAcrossSKUs(profile, product, productSetting)
+		}
+		if !replaced {
+			merged = append(merged, next)
 		}
 	}
-	items = append(items, productItem)
-
-	for i := range product.SKUs {
-		sku := &product.SKUs[i]
-		if !sku.IsActive {
-			continue
+	parents, skus := resellercontract.BuildSettingIndexes(merged)
+	out := make([]ProductSettingPreviewItem, 0, len(row.Product.SKUs))
+	for _, sku := range row.Product.SKUs {
+		quote := resellercontract.ResolveSupplyQuote(profile, sku, parents[productID], skus[resellercontract.SettingKey{ProductID: productID, SKUID: sku.ID}])
+		base := decimal.Zero
+		if quote.Supply != nil {
+			base = quote.Supply.Decimal
 		}
-		skuSetting := skuSettings[sku.ID]
-		base := sku.PriceAmount.Decimal.Round(2)
-		item := ProductSettingPreviewItem{SKUID: sku.ID, IsListed: true, BasePrice: base, Valid: true}
-		if (productSetting != nil && !productSetting.IsListed) || (skuSetting != nil && !skuSetting.IsListed) {
-			item.IsListed = false
-			items = append(items, item)
-			continue
-		}
-		price, _, perr := ResolveUnitAmount(profile, productSetting, skuSetting, base)
-		if perr == nil {
-			perr = ValidateUnitAmount(profile, sku, base, price)
-		}
-		item.EffectivePrice = price.Round(2)
-		item.Valid = perr == nil
-		item.ErrorCode = previewErrorCode(perr)
-		items = append(items, item)
+		out = append(out, ProductSettingPreviewItem{SKUID: sku.ID, IsListed: quote.CanSell, BasePrice: base, EffectivePrice: quote.Retail.Decimal, Valid: quote.Valid, ErrorCode: quote.ErrorCode})
 	}
-	return items, nil
+	return out, nil
 }
 
 func buildPreviewSetting(input ProductSettingInput) (resellerdomain.ProductSetting, error) {
@@ -444,7 +676,7 @@ func buildPreviewSetting(input ProductSettingInput) (resellerdomain.ProductSetti
 		mode = resellerdomain.PricingModeInherit
 	}
 	switch mode {
-	case resellerdomain.PricingModeInherit, resellerdomain.PricingModeMarkupPercent, resellerdomain.PricingModeFixedMarkup, resellerdomain.PricingModeFixedPrice:
+	case resellerdomain.PricingModeInherit, resellerdomain.PricingModeFixedPrice:
 	default:
 		return resellerdomain.ProductSetting{}, resellercontract.ErrPricingModeInvalid
 	}
@@ -459,88 +691,18 @@ func buildPreviewSetting(input ProductSettingInput) (resellerdomain.ProductSetti
 	}, nil
 }
 
-func previewValidateProductRuleAcrossSKUs(profile *resellerdomain.Profile, product productdomain.Product, productSetting *resellerdomain.ProductSetting) (bool, string) {
-	for i := range product.SKUs {
-		sku := &product.SKUs[i]
-		if !sku.IsActive {
-			continue
-		}
-		base := sku.PriceAmount.Decimal.Round(2)
-		price, _, err := ResolveUnitAmount(profile, productSetting, nil, base)
-		if err == nil {
-			err = ValidateUnitAmount(profile, sku, base, price)
-		}
-		if err != nil {
-			return false, previewErrorCode(err)
-		}
-	}
-	return true, ""
-}
-
-func previewErrorCode(err error) string {
-	switch {
-	case err == nil:
-		return ""
-	case errors.Is(err, resellercontract.ErrMarkupExceeded):
-		return "markup_exceeded"
-	default:
-		return "price_invalid"
-	}
-}
-
 func computeProductEffectivePrices(profile *resellerdomain.Profile, product productdomain.Product, settings []resellerdomain.ProductSetting) (map[uint]decimal.Decimal, map[uint]string, error) {
 	effective := map[uint]decimal.Decimal{}
 	rules := map[uint]string{}
-	byProduct, bySKU := indexProductSettings(settings)
-	productSetting := byProduct[product.ID]
-	if productSetting != nil && productSetting.IsListed {
-		price, rule, err := ResolveUnitAmount(profile, productSetting, nil, product.PriceAmount.Decimal.Round(2))
-		if err != nil {
-			return effective, rules, err
+	parents, skus := resellercontract.BuildSettingIndexes(settings)
+	for _, sku := range product.SKUs {
+		quote := resellercontract.ResolveSupplyQuote(profile, sku, parents[product.ID], skus[resellercontract.SettingKey{ProductID: product.ID, SKUID: sku.ID}])
+		if quote.Valid {
+			effective[sku.ID] = quote.Retail.Decimal
+			rules[sku.ID] = RuleSourceSKU
 		}
-		effective[0] = price.Round(2)
-		rules[0] = rule.Source
-	}
-	for i := range product.SKUs {
-		sku := &product.SKUs[i]
-		if !sku.IsActive {
-			continue
-		}
-		skuSetting := bySKU[productSettingKey{productID: product.ID, skuID: sku.ID}]
-		if productSetting != nil && !productSetting.IsListed {
-			continue
-		}
-		if skuSetting != nil && !skuSetting.IsListed {
-			continue
-		}
-		price, rule, err := ResolveUnitAmount(profile, productSetting, skuSetting, sku.PriceAmount.Decimal.Round(2))
-		if err != nil {
-			return effective, rules, err
-		}
-		effective[sku.ID] = price.Round(2)
-		rules[sku.ID] = rule.Source
 	}
 	return effective, rules, nil
-}
-
-type productSettingKey struct {
-	productID uint
-	skuID     uint
-}
-
-func indexProductSettings(settings []resellerdomain.ProductSetting) (map[uint]*resellerdomain.ProductSetting, map[productSettingKey]*resellerdomain.ProductSetting) {
-	byProduct := make(map[uint]*resellerdomain.ProductSetting)
-	bySKU := make(map[productSettingKey]*resellerdomain.ProductSetting)
-	for i := range settings {
-		setting := settings[i]
-		row := setting
-		if setting.SKUID == 0 {
-			byProduct[setting.ProductID] = &row
-			continue
-		}
-		bySKU[productSettingKey{productID: setting.ProductID, skuID: setting.SKUID}] = &row
-	}
-	return byProduct, bySKU
 }
 
 func findProductSKU(items []productdomain.ProductSKU, skuID uint) *productdomain.ProductSKU {

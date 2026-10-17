@@ -11,12 +11,13 @@
       <Card class="p-7 shadow-[var(--shadow-lg)] sm:p-9">
         <div class="mb-7 text-center">
           <p class="text-[11px] font-bold uppercase tracking-[0.2em] text-primary">{{ brandSiteName }}</p>
-          <h1 class="mt-3 text-3xl font-extrabold">{{ step === 'totp' ? t('auth.login.totp.title') : t('auth.login.title') }}</h1>
-          <p class="mt-2 text-sm text-muted-foreground">{{ step === 'totp' ? t('auth.login.totp.subtitle') : t('auth.login.subtitle') }}</p>
+          <h1 class="mt-3 text-3xl font-extrabold">{{ step === 'enrollment' ? t('auth.login.enrollment.title') : step === 'totp' ? t('auth.login.totp.title') : t('auth.login.title') }}</h1>
+          <p class="mt-2 text-sm text-muted-foreground">{{ step === 'enrollment' ? t('auth.login.enrollment.subtitle') : step === 'totp' ? t('auth.login.totp.subtitle') : t('auth.login.subtitle') }}</p>
         </div>
 
         <!-- 2FA -->
-        <form v-if="step === 'totp'" class="grid gap-[18px]" @submit.prevent="handleVerify2FA">
+        <LoginEnrollment v-if="step === 'enrollment'" :challenge-token="userAuthStore.challengeToken" :remaining-seconds="challengeRemainingSeconds" @cancel="cancel2FA" @bound="handleEnrollmentBound" @complete="handleEnrollmentComplete" />
+        <form v-else-if="step === 'totp'" class="grid gap-[18px]" @submit.prevent="handleVerify2FA">
           <div class="rounded-xl border bg-muted px-4 py-2 text-center text-xs text-muted-foreground">
             {{ t('auth.login.totp.countdown', { seconds: challengeRemainingSeconds }) }}
           </div>
@@ -183,7 +184,7 @@
         </form>
       </Card>
 
-      <div v-if="registrationEnabled" class="mt-4 text-center">
+      <div v-if="registrationEnabled && step === 'password'" class="mt-4 text-center">
         <RouterLink to="/auth/register" class="text-sm text-muted-foreground transition-colors hover:text-foreground">{{ t('auth.login.noAccount') }}</RouterLink>
       </div>
     </div>
@@ -191,6 +192,7 @@
 </template>
 
 <script setup lang="ts">
+import LoginEnrollment from '@/components/security/LoginEnrollment.vue'
 import { useI18n } from 'vue-i18n'
 import { ArrowLeft, Mail, Lock, ShieldCheck, Eye, EyeOff, LogIn } from 'lucide-vue-next'
 import ImageCaptcha from '../../../components/captcha/ImageCaptcha.vue'
@@ -209,6 +211,7 @@ const { t } = useI18n()
 const {
   userAuthStore, brandSiteName,
   email, password, showPassword, rememberMe,
+  handleEnrollmentBound, handleEnrollmentComplete,
   step, totpMode, totpCode, recoveryCode, challengeRemainingSeconds, handleVerify2FA, cancel2FA,
   error, info, formValidation,
   loginCaptchaEnabled, captchaProvider, captchaPayload, turnstileToken, turnstileSiteKey,

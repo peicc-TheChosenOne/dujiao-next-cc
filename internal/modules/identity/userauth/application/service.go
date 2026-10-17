@@ -3,12 +3,14 @@ package application
 import (
 	"context"
 	"crypto/rand"
+	"crypto/subtle"
 	"errors"
 	"fmt"
 	"github.com/dujiao-next/internal/telegramidentity"
 	"math/big"
 	"net/mail"
 	"strings"
+	"sync"
 	"time"
 
 	usercontract "github.com/dujiao-next/internal/modules/identity/user/contract"
@@ -22,6 +24,7 @@ import (
 	"github.com/dujiao-next/internal/cache"
 	"github.com/dujiao-next/internal/config"
 	"github.com/dujiao-next/internal/constants"
+	"github.com/dujiao-next/internal/logger"
 	emailverificationcontract "github.com/dujiao-next/internal/modules/identity/emailverification/contract"
 	emailverificationdomain "github.com/dujiao-next/internal/modules/identity/emailverification/domain"
 	externalidentitycontract "github.com/dujiao-next/internal/modules/identity/externalidentity/contract"
@@ -37,6 +40,7 @@ import (
 
 // Service 用户认证服务
 type Service struct {
+	securityReader        ResellerSecurityReader
 	cfg                   *config.Config
 	userRepo              usercontract.Store
 	userOAuthIdentityRepo externalidentitycontract.Store
@@ -106,10 +110,12 @@ func NewService(
 
 // UserJWTClaims 用户 JWT 声明
 type UserJWTClaims struct {
-	UserID       uint   `json:"user_id"`
-	Email        string `json:"email"`
-	TokenVersion uint64 `json:"token_version"`
-	Typ          string `json:"typ,omitempty"`
+	AuthenticatedAt   int64  `json:"authenticated_at,omitempty"`
+	TwoFactorVerified bool   `json:"two_factor_verified,omitempty"`
+	UserID            uint   `json:"user_id"`
+	Email             string `json:"email"`
+	TokenVersion      uint64 `json:"token_version"`
+	Typ               string `json:"typ,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -118,17 +124,20 @@ type UserJWTClaims struct {
 // 注：Typ 字段同时占用与 UserJWTClaims 兼容的 typ 键，写入 "2fa_challenge"，
 // 防止挑战 token 在被错误地解析为 UserJWTClaims 时通过中间件的 typ 校验。
 type UserChallengeClaims struct {
-	UserID      uint   `json:"user_id"`
-	JTI         string `json:"jti"`
-	Purpose     string `json:"purpose"`
-	RememberMe  bool   `json:"remember_me"`
-	LoginSource string `json:"login_source,omitempty"`
-	Typ         string `json:"typ"`
+	TokenVersion uint64 `json:"token_version"`
+	UserID       uint   `json:"user_id"`
+	JTI          string `json:"jti"`
+	Purpose      string `json:"purpose"`
+	RememberMe   bool   `json:"remember_me"`
+	LoginSource  string `json:"login_source,omitempty"`
+	Typ          string `json:"typ"`
 	jwt.RegisteredClaims
 }
 
 // UserLoginResult 用户登录第一步结果
 type UserLoginResult struct {
+	LoginSource        string
+	RequiresTOTPSetup  bool
 	RequiresTOTP       bool
 	User               *userdomain.User
 	Token              string
@@ -151,16 +160,22 @@ const (
 
 // GenerateUserJWT 生成用户 JWT Token
 func (s *Service) GenerateUserJWT(user *userdomain.User, expireHours int) (string, time.Time, error) {
+	return s.generateUserJWT(user, expireHours, false)
+}
+
+func (s *Service) generateUserJWT(user *userdomain.User, expireHours int, verified bool) (string, time.Time, error) {
 	resolvedHours := expireHours
 	if resolvedHours <= 0 {
 		resolvedHours = resolveUserJWTExpireHours(s.cfg.UserJWT)
 	}
 	expiresAt := time.Now().Add(time.Duration(resolvedHours) * time.Hour)
 	claims := UserJWTClaims{
-		UserID:       user.ID,
-		Email:        user.Email,
-		TokenVersion: user.TokenVersion,
-		Typ:          jwttoken.TypeAccess,
+		AuthenticatedAt:   time.Now().UnixNano(),
+		TwoFactorVerified: verified,
+		UserID:            user.ID,
+		Email:             user.Email,
+		TokenVersion:      user.TokenVersion,
+		Typ:               jwttoken.TypeAccess,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(expiresAt),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -191,6 +206,13 @@ func (s *Service) ParseUserJWT(tokenString string) (*UserJWTClaims, error) {
 	}
 	return nil, errors.New("无效的 token")
 }
+
+// dummyPasswordHash 在账号不存在时陪跑一次 bcrypt，使响应耗时与密码错误一致，避免按耗时枚举账号。
+// 必须是合法哈希：长度不足的字符串会被 bcrypt 立即拒绝，起不到抹平耗时的作用。
+var dummyPasswordHash = sync.OnceValue(func() []byte {
+	hash, _ := bcrypt.GenerateFromPassword([]byte("dujiao-next-timing-guard"), bcrypt.DefaultCost)
+	return hash
+})
 
 // SendVerifyCode 发送邮箱验证码
 func (s *Service) SendVerifyCode(ctx context.Context, email, purpose, locale string) error {
@@ -225,7 +247,8 @@ func (s *Service) SendVerifyCode(ctx context.Context, email, purpose, locale str
 			return err
 		}
 		if user == nil {
-			return ErrNotFound
+			// 与「已发送」返回一致，避免借找回密码接口枚举已注册邮箱
+			return nil
 		}
 		if strings.TrimSpace(user.Locale) != "" {
 			locale = user.Locale
@@ -245,7 +268,15 @@ func (s *Service) SendVerifyCode(ctx context.Context, email, purpose, locale str
 		}
 	}
 
-	return s.sendVerifyCode(ctx, normalized, purpose, locale)
+	err = s.sendVerifyCode(ctx, normalized, purpose, locale)
+	if purpose == constants.VerifyPurposeReset {
+		// 冷却和发送失败也使用统一公开响应，避免二次请求区分邮箱是否注册。
+		if err != nil && !errors.Is(err, ErrVerifyCodeTooFrequent) {
+			logger.Warnw("password_reset_code_send_failed", "error", err)
+		}
+		return nil
+	}
+	return err
 }
 
 func (s *Service) checkRegistrationEmailDomain(email string) error {
@@ -340,7 +371,11 @@ func (s *Service) LoginStep1(email, password string, rememberMe bool) (*UserLogi
 		return nil, err
 	}
 	if user == nil {
-		_ = bcrypt.CompareHashAndPassword([]byte("$2a$10$dummyhashtopreventtimingattacksxxxxxxxxxxxxxxxxxx"), []byte(password))
+		_ = bcrypt.CompareHashAndPassword(dummyPasswordHash(), []byte(password))
+		return nil, ErrInvalidCredentials
+	}
+	// 先校验密码再暴露账号状态，否则不知道密码也能探出账号是否存在、是否被禁用
+	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err != nil {
 		return nil, ErrInvalidCredentials
 	}
 	if strings.ToLower(user.Status) != constants.UserStatusActive {
@@ -349,22 +384,9 @@ func (s *Service) LoginStep1(email, password string, rememberMe bool) (*UserLogi
 	if user.EmailVerifiedAt == nil {
 		return nil, ErrEmailNotVerified
 	}
-	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err != nil {
-		return nil, ErrInvalidCredentials
-	}
 
-	if user.TOTPEnabledAt != nil {
-		challenge, jti, expiresAt, err := s.IssueUserChallengeToken(user.ID, rememberMe)
-		if err != nil {
-			return nil, err
-		}
-		return &UserLoginResult{
-			RequiresTOTP:       true,
-			User:               user,
-			ChallengeToken:     challenge,
-			ChallengeJTI:       jti,
-			ChallengeExpiresAt: expiresAt,
-		}, nil
+	if result, err := s.prepareSecondFactor(user, rememberMe, constants.LoginLogSourceWeb); err != nil || result != nil {
+		return result, err
 	}
 
 	expireHours := resolveUserJWTExpireHours(s.cfg.UserJWT)
@@ -398,28 +420,30 @@ func (s *Service) IssueUserChallengeToken(userID uint, rememberMe bool) (token, 
 // IssueUserChallengeTokenForSource signs a 2FA challenge while retaining the
 // original login provider for the completion audit log.
 func (s *Service) IssueUserChallengeTokenForSource(userID uint, rememberMe bool, loginSource string) (token, jti string, expiresAt time.Time, err error) {
-	jti = uuid.NewString()
-	expiresAt = time.Now().Add(challenge.TTL)
-	claims := UserChallengeClaims{
-		UserID:      userID,
-		JTI:         jti,
-		Purpose:     challenge.PurposeTwoFactor,
-		RememberMe:  rememberMe,
-		LoginSource: normalizeLoginSource(loginSource),
-		Typ:         jwttoken.TypeTwoFactorChallenge,
-		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(expiresAt),
-			IssuedAt:  jwt.NewNumericDate(time.Now()),
-			NotBefore: jwt.NewNumericDate(time.Now()),
-			ID:        jti,
-		},
-	}
-	t := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	signed, err := t.SignedString([]byte(s.cfg.UserJWT.SecretKey))
+	user, err := s.userRepo.GetByID(userID)
 	if err != nil {
 		return "", "", time.Time{}, err
 	}
-	return signed, jti, expiresAt, nil
+	if user == nil {
+		return "", "", time.Time{}, ErrNotFound
+	}
+	return s.issueUserChallenge(user, rememberMe, loginSource, false)
+}
+
+func (s *Service) issueUserChallenge(user *userdomain.User, rememberMe bool, loginSource string, setup bool) (string, string, time.Time, error) {
+	jti := uuid.NewString()
+	ttl, purpose, typ := challenge.TTL, challenge.PurposeTwoFactor, jwttoken.TypeTwoFactorChallenge
+	if setup {
+		ttl, purpose, typ = 10*time.Minute, "user_2fa_enrollment", "2fa_enrollment"
+	}
+	expiresAt := time.Now().Add(ttl)
+	claims := UserChallengeClaims{
+		UserID: user.ID, TokenVersion: user.TokenVersion, JTI: jti, Purpose: purpose,
+		RememberMe: rememberMe, LoginSource: normalizeLoginSource(loginSource), Typ: typ,
+		RegisteredClaims: jwt.RegisteredClaims{ExpiresAt: jwt.NewNumericDate(expiresAt), IssuedAt: jwt.NewNumericDate(time.Now()), NotBefore: jwt.NewNumericDate(time.Now()), ID: jti},
+	}
+	signed, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(s.cfg.UserJWT.SecretKey))
+	return signed, jti, expiresAt, err
 }
 
 func normalizeLoginSource(source string) string {
@@ -435,6 +459,10 @@ func normalizeLoginSource(source string) string {
 
 // ParseUserChallengeToken 解析并校验用户挑战 token
 func (s *Service) ParseUserChallengeToken(tokenString string) (*UserChallengeClaims, error) {
+	return s.parseLoginChallenge(tokenString, false)
+}
+
+func (s *Service) parseLoginChallenge(tokenString string, enrollment bool) (*UserChallengeClaims, error) {
 	parser := jwttoken.NewHS256Parser()
 	tok, err := parser.ParseWithClaims(tokenString, &UserChallengeClaims{}, func(token *jwt.Token) (interface{}, error) {
 		return []byte(s.cfg.UserJWT.SecretKey), nil
@@ -446,8 +474,19 @@ func (s *Service) ParseUserChallengeToken(tokenString string) (*UserChallengeCla
 	if !ok || !tok.Valid {
 		return nil, errors.New("invalid challenge token")
 	}
-	if claims.Purpose != challenge.PurposeTwoFactor || claims.Typ != jwttoken.TypeTwoFactorChallenge {
+	purpose, typ := challenge.PurposeTwoFactor, jwttoken.TypeTwoFactorChallenge
+	if enrollment {
+		purpose, typ = "user_2fa_enrollment", "2fa_enrollment"
+	}
+	if claims.Purpose != purpose || claims.Typ != typ || claims.UserID == 0 || claims.JTI == "" {
 		return nil, errors.New("invalid challenge purpose")
+	}
+	user, err := s.userRepo.GetByID(claims.UserID)
+	if err != nil {
+		return nil, err
+	}
+	if user == nil || user.TokenVersion != claims.TokenVersion || user.Status != constants.UserStatusActive {
+		return nil, ErrLoginSecurity
 	}
 	return claims, nil
 }
@@ -465,7 +504,7 @@ func (s *Service) CompleteLoginAfter2FA(userID uint, rememberMe bool) (*UserLogi
 	if rememberMe {
 		expireHours = resolveRememberMeExpireHours(s.cfg.UserJWT)
 	}
-	token, expiresAt, err := s.GenerateUserJWT(user, expireHours)
+	token, expiresAt, err := s.generateUserJWT(user, expireHours, true)
 	if err != nil {
 		return nil, err
 	}
@@ -495,18 +534,26 @@ func (s *Service) verifyCode(email, purpose, code string) (*emailverificationdom
 		return nil, ErrVerifyCodeExpired
 	}
 
-	maxAttempts := resolveMaxAttempts(s.cfg.Email.VerifyCode)
-	if maxAttempts > 0 && record.AttemptCount >= maxAttempts {
+	// 先原子占用一次尝试再比对，并发请求无法共用同一个旧计数绕过次数上限
+	reserved, err := s.codeRepo.ReserveAttempt(record.ID, resolveMaxAttempts(s.cfg.Email.VerifyCode))
+	if err != nil {
+		return nil, err
+	}
+	if !reserved {
 		return nil, ErrVerifyCodeAttemptsExceeded
 	}
 
-	if strings.TrimSpace(record.Code) != strings.TrimSpace(code) {
-		_ = s.codeRepo.IncrementAttempt(record.ID)
+	if subtle.ConstantTimeCompare([]byte(strings.TrimSpace(record.Code)), []byte(strings.TrimSpace(code))) != 1 {
 		return nil, ErrVerifyCodeInvalid
 	}
 
-	if err := s.codeRepo.MarkVerified(record.ID, now); err != nil {
+	verified, err := s.codeRepo.MarkVerified(record.ID, now)
+	if err != nil {
 		return nil, err
+	}
+	if !verified {
+		// 同一验证码已被并发请求用掉
+		return nil, ErrVerifyCodeInvalid
 	}
 	return record, nil
 }

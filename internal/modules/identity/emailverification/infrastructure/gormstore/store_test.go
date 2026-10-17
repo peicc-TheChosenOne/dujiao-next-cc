@@ -52,12 +52,12 @@ func TestStoreReturnsLatestActiveCodeAndPersistsAttempts(t *testing.T) {
 	if got == nil || got.ID != latest.ID {
 		t.Fatalf("unexpected latest verification code: %#v", got)
 	}
-	if err := store.IncrementAttempt(got.ID); err != nil {
-		t.Fatalf("increment attempt failed: %v", err)
+	if reserved, err := store.ReserveAttempt(got.ID, 5); err != nil || !reserved {
+		t.Fatalf("reserve attempt = %v, %v", reserved, err)
 	}
 	verifiedAt := now.Add(2 * time.Second)
-	if err := store.MarkVerified(got.ID, verifiedAt); err != nil {
-		t.Fatalf("mark verified failed: %v", err)
+	if verified, err := store.MarkVerified(got.ID, verifiedAt); err != nil || !verified {
+		t.Fatalf("mark verified = %v, %v", verified, err)
 	}
 	refreshed, err := store.GetLatest("buyer@example.com", "login")
 	if err != nil {
@@ -65,5 +65,37 @@ func TestStoreReturnsLatestActiveCodeAndPersistsAttempts(t *testing.T) {
 	}
 	if refreshed.AttemptCount != 1 || refreshed.VerifiedAt == nil || !refreshed.VerifiedAt.Equal(verifiedAt) {
 		t.Fatalf("verification state was not persisted: %#v", refreshed)
+	}
+}
+
+func TestReserveAttemptStopsAtLimitAndAfterVerification(t *testing.T) {
+	store := newTestStore(t)
+	now := time.Now().UTC()
+	code := &emailverificationdomain.Code{
+		Email: "buyer@example.com", Purpose: "reset", Code: "123456",
+		ExpiresAt: now.Add(time.Minute), SentAt: now, CreatedAt: now,
+	}
+	if err := store.Create(code); err != nil {
+		t.Fatalf("create verification code failed: %v", err)
+	}
+
+	for i := 1; i <= 4; i++ {
+		reserved, err := store.ReserveAttempt(code.ID, 3)
+		if err != nil {
+			t.Fatalf("reserve attempt %d failed: %v", i, err)
+		}
+		if want := i <= 3; reserved != want {
+			t.Fatalf("reserve attempt %d = %v, want %v", i, reserved, want)
+		}
+	}
+
+	if verified, err := store.MarkVerified(code.ID, now); err != nil || !verified {
+		t.Fatalf("first mark verified = %v, %v", verified, err)
+	}
+	if verified, err := store.MarkVerified(code.ID, now); err != nil || verified {
+		t.Fatalf("second mark verified = %v, %v, want false", verified, err)
+	}
+	if reserved, err := store.ReserveAttempt(code.ID, 0); err != nil || reserved {
+		t.Fatalf("reserve on verified code = %v, %v, want false", reserved, err)
 	}
 }

@@ -1,6 +1,6 @@
 {
   "common": {
-    "siteName": "Dujiao-Next",
+    "siteName": "AI大玩家",
     "loading": "加载中...",
     "error": "错误",
     "success": "成功",
@@ -99,6 +99,12 @@
     "description": "专业的在线工作室，为您提供优质的产品和服务。",
     "quickLinks": "快速链接",
     "contact": "联系我们",
+    "wechat": "微信",
+    "email": "邮箱",
+    "copyContact": "点击复制{name}",
+    "supportLink": "联系客服",
+    "copySuccess": "已复制到剪贴板",
+    "copyFailed": "复制失败，请手动复制",
     "rights": "保留所有权利",
     "terms": "服务条款",
     "privacy": "隐私政策"
@@ -112,7 +118,7 @@
   },
   "home": {
     "hero": {
-      "title": "Dujiao-Next · D&N",
+      "title": "AI大玩家",
       "subtitle": "专业的产品与服务提供商",
       "cta": "浏览商品",
       "badge": "新一代数字商店"
@@ -647,7 +653,7 @@
       "withdrawEmpty": "暂无提现记录",
       "siteConfig": {
         "title": "站点配置",
-        "subtitle": "维护分销站点的品牌、公告、客服和 SEO 信息",
+        "subtitle": "维护分销站点的品牌、Banner、公告、客服和 SEO 信息",
         "save": "保存配置",
         "saving": "保存中...",
         "loadFailed": "站点配置加载失败，请稍后重试",
@@ -655,6 +661,48 @@
         "saveFailed": "站点配置保存失败，请检查输入后重试",
         "inactive": "分销商身份启用后才能编辑站点配置。",
         "emptyLinks": "暂无页脚链接",
+        "banner": {
+          "title": "首页 Banner",
+          "description": "设置本店首页主图，仅对自己的分销站生效。",
+          "reset": "恢复总店默认",
+          "modes": {
+            "inherit": "使用总店默认",
+            "custom": "使用我的 Banner",
+            "hidden": "不显示 Banner"
+          },
+          "modeHints": {
+            "inherit": "跟随总店 Banner，适合暂时不单独装修的店铺。",
+            "custom": "上传自己的电脑端和手机端首页主图。",
+            "hidden": "在本店首页隐藏整个 Banner 区域。"
+          },
+          "desktopImage": "电脑端 Banner",
+          "mobileImage": "手机端 Banner（可选）",
+          "desktopHint": "建议 1920 × 600，支持 JPG / PNG / WebP / GIF，建议压缩后上传。",
+          "mobileHint": "建议 750 × 600；未上传手机端图片时使用电脑端图片。",
+          "text": "Banner 文案",
+          "textHint": "可选填写，支持简体、繁体和英文；留空则不叠加文案。",
+          "mainTitle": "主标题",
+          "subtitle": "副标题",
+          "linkType": "点击跳转",
+          "linkTypes": {
+            "none": "不跳转",
+            "internal": "站内页面",
+            "external": "外部链接"
+          },
+          "linkValue": "跳转地址",
+          "openInNewTab": "在新窗口打开",
+          "preview": "效果预览",
+          "devices": {
+            "desktop": "电脑端",
+            "mobile": "手机端"
+          },
+          "locales": {
+            "simplified": "简体",
+            "traditional": "繁體",
+            "english": "EN"
+          },
+          "emptyPreview": "上传图片或填写文案后预览效果"
+        },
         "sections": {
           "brand": "品牌基础",
           "support": "客服联系方式",
@@ -663,7 +711,7 @@
         },
         "descriptions": {
           "brand": "设置站点名称、Logo 与浏览器图标",
-          "support": "展示在站点的联系入口，留空则不显示",
+          "support": "展示本店铺的客服联系方式，留空则不显示",
           "seo": "搜索引擎与社交分享信息，可分语言填写",
           "announcement": "访客进入分销站首页时以弹窗展示的公告",
           "footer": "展示在页面底部的自定义链接",
@@ -672,6 +720,8 @@
         "tabs": {
           "brand": "品牌",
           "brandDescription": "名称与图标",
+          "banner": "Banner",
+          "bannerDescription": "首页主图",
           "support": "客服",
           "supportDescription": "联系方式",
           "content": "内容",
@@ -733,12 +783,20 @@
           "addLink": "添加链接",
           "remove": "移除"
         },
+        "contactHints": {
+          "open": "点击后跳转",
+          "copy": "点击后复制"
+        },
         "fields": {
           "siteName": "站点名称",
           "logo": "Logo 地址",
           "favicon": "站点图标地址",
           "telegram": "Telegram",
           "whatsapp": "WhatsApp",
+          "wechat": "微信",
+          "wechatPlaceholder": "填写客服微信号",
+          "qq": "QQ号",
+          "qqPlaceholder": "例如：123456789",
           "email": "客服邮箱",
           "supportUrl": "客服链接",
           "announcementEnabled": "启用公告",
@@ -817,7 +875,8 @@
         "pendingReview": "待审核",
         "active": "已启用",
         "disabled": "已停用",
-        "unknown": "未知状态"
+        "unknown": "未知状态",
+        "provisioning": "正在接入"
       },
       "domainVerification": {
         "pending": "待验证",
@@ -1003,6 +1062,22 @@
         "codeRequired": "请输入动态码",
         "recoveryRequired": "请输入恢复码",
         "verifyFailed": "验证失败，请确认输入是否正确"
+      },
+      "enrollment": {
+        "title": "绑定两步验证",
+        "subtitle": "完成绑定后即可进入分销控制台",
+        "hint": "分销商账号必须绑定验证器。请使用 1Password 或其他支持 TOTP 的验证器扫描二维码，也可手动输入密钥。若原验证器已被平台重置，请重新绑定。",
+        "qrAlt": "验证器绑定二维码",
+        "confirmBind": "确认绑定",
+        "download": "下载恢复码",
+        "saved": "我已妥善保存恢复码",
+        "continue": "进入控制台",
+        "copyFailed": "复制失败，请下载或手动保存恢复码",
+        "managed": "登录两步验证由平台管理。如需更换或重置验证器，请联系管理员。",
+        "paused": "平台已暂停此账号的登录两步验证，原绑定仍保留。",
+        "recoveryHint": "恢复码仅展示这一次。请保存在安全的位置，离开当前页面后无法再次查看。",
+        "policyRequired": "平台强制验证",
+        "policyPaused": "平台已暂停"
       }
     },
     "telegramCallback": {
@@ -1296,7 +1371,7 @@
       "apply": "开通申请",
       "domains": "域名管理",
       "site": "店铺设置",
-      "products": "商品定价",
+      "products": "商品管理",
       "orders": "销售订单",
       "finance": "财务概览",
       "ledger": "账务流水",
@@ -1366,6 +1441,24 @@
       "systemDomains": "系统域名",
       "customDomains": "自定义域名",
       "workspaceTitle": "域名状态",
+      "groupSummary": "已绑定 {count} 组自定义域名 · {active} 个访问地址可用",
+      "groupCount": "共 {count} 组",
+      "groupAvailability": "{active} / {total} 个地址可用",
+      "addDomain": "添加自定义域名",
+      "visitStore": "访问店铺",
+      "copyAddress": "复制地址",
+      "copyTarget": "复制解析目标",
+      "dnsRecordsTitle": "配置以下两条 DNS 记录",
+      "recordName": "记录名称",
+      "recordType": "类型",
+      "recordTarget": "目标值",
+      "connectionDetails": "查看解析配置与接入详情",
+      "connectionIssue": "接入异常",
+      "bindingSummary": "配置根域名和 www 的解析后提交域名，系统自动验证 DNS、开通 HTTPS，管理员审核通过后即可访问店铺。",
+      "dnsHelp": "DNS 配置说明与常见问题",
+      "apexHelp": "DNS 服务商不限。根域名需要支持 CNAME 扁平化或 ALIAS；不支持时请联系平台。请勿填写 http://、https:// 或路径。",
+      "cloudflareHelp": "如果域名托管在 Cloudflare 且开启了代理（橙色云朵），请将 SSL/TLS 模式设置为「完全（严格）」。",
+      "systemOptional": "尚未分配，不影响当前自有域名使用。如需系统二级域名，请联系管理员。",
       "workspaceDescription": "集中查看当前主域名、系统二级域名和自定义域名的可用状态。",
       "primaryBadge": "主入口",
       "primaryTitle": "主域名",
@@ -1392,11 +1485,32 @@
       "tableActions": "操作",
       "visit": "访问",
       "verifyTitle": "域名验证",
-      "verifyDesc": "自定义域名提交后进入待审核状态：请先将该域名解析（CNAME/A 记录）指向平台，再等待平台人工核验，通过后即生效。"
+      "verifyDesc": "自定义域名提交后进入待审核状态：请先将该域名解析（CNAME/A 记录）指向平台，再等待平台人工核验，通过后即生效。",
+      "provisioning": {
+        "connecting": "正在接入",
+        "dns_pending": "等待 DNS 生效",
+        "certificate_pending": "正在签发 HTTPS 证书",
+        "ready": "DNS / HTTPS 已就绪",
+        "deleting": "正在取消接入",
+        "disabled": "已取消接入",
+        "profile_inactive": "分销账号已停用"
+      },
+      "errors": {
+        "api_unavailable": "连接服务暂时不可用，系统会自动重试。",
+        "quota_exceeded": "平台域名接入额度已用完，请联系管理员。",
+        "rate_limited": "连接服务繁忙，系统会自动重试。",
+        "access_denied": "平台接入权限配置有误，请联系管理员。",
+        "validation_failed": "域名验证失败，请检查 DNS、CAA 记录后重试。",
+        "not_found": "云端绑定不存在，系统会重新接入。",
+        "domain_conflict": "根域名或 www 已被其他店铺占用，请联系管理员。"
+      },
+      "bindingInstructions": "先将根域名和 www 的 CNAME 指向下方入口，再提交根域名。系统自动验证并开通 HTTPS，全部就绪后等待管理员审核，审核通过才开放店铺。根域名需要 DNS 服务商支持 CNAME 扁平化或 ALIAS；不支持时请联系平台。域名托管在 Cloudflare 并开启代理（橙色云朵）时，请把 SSL/TLS 模式设为「完全（严格）」。",
+      "refreshValidation": "重新检查",
+      "submittedForValidation": "域名已提交，正在自动验证 DNS 和 HTTPS；验证通过后等待管理员审核。"
     },
     "site": {
       "title": "店铺设置",
-      "description": "配置分销站名称、公告、客服信息、导航和基础样式。",
+      "description": "配置分销站名称、首页 Banner、公告、客服信息、导航和基础样式。",
       "previewStore": "预览站点",
       "cards": {
         "brand": "品牌",
@@ -1410,25 +1524,30 @@
       },
       "readiness": {
         "title": "配置进度",
-        "description": "先完成品牌和客服，再补齐 SEO、公告、页脚链接和导航展示。",
+        "description": "先完成品牌、Banner 和客服，再补齐 SEO、公告、页脚链接和导航展示。",
         "configured": "已配置",
         "pending": "待完善",
         "brand": "品牌",
+        "banner": "Banner",
         "support": "客服",
         "seo": "SEO",
         "announcement": "公告"
       }
     },
     "products": {
-      "title": "商品定价",
-      "description": "控制商品是否在分销站展示，并维护商品或 SKU 级定价规则。",
+      "tabs": {
+        "images": "商品图片",
+        "pricing": "商品定价"
+      },
+      "title": "商品管理",
+      "description": "自定义本店商品图片，维护上架状态与售价。",
       "previewStore": "预览分销站",
       "viewOrders": "查看订单",
       "focusTitle": "配置重点",
       "focusDescription": "先处理高转化商品，再逐步细化 SKU 价格和隐藏规则。",
       "cards": {
         "defaultMarkup": "默认加价",
-        "defaultMarkupDescription": "未单独配置商品时，系统会使用默认加价比例生成分销价。",
+        "defaultMarkupDescription": "未定价规格预填最低售价，保存后生效；默认加价不参与预填。",
         "maxMarkup": "最高加价",
         "maxMarkupDescription": "封顶为 0 表示不限制；超过后台上限的价格配置会被拒绝保存。",
         "storefront": "分销站",
@@ -1439,9 +1558,9 @@
         "listing": "上架范围",
         "listingDescription": "按商品或 SKU 隐藏不适合分销的商品。",
         "pricing": "价格策略",
-        "pricingDescription": "继承、百分比加价、固定加价和固定售价按需组合。",
+        "pricingDescription": "按供货价设置并保存每个规格的固定售价。",
         "sku": "SKU 覆盖",
-        "skuDescription": "优先为高价或高库存 SKU 设置精细规则。"
+        "skuDescription": "每个规格独立保存售价与上下架状态。"
       }
     },
     "finance": {
@@ -1471,7 +1590,7 @@
       "status": "状态",
       "domain": "来源域名",
       "totalAmount": "成交金额",
-      "baseAmount": "基准金额",
+      "baseAmount": "供货金额",
       "profitAmount": "利润",
       "profitStatus": "利润状态",
       "buyer": "买家",
@@ -1510,7 +1629,7 @@
       "product": "商品",
       "quantity": "数量",
       "unitPrice": "成交单价",
-      "baseUnit": "基准单价",
+      "baseUnit": "供货单价",
       "profitSnapshot": "利润快照",
       "timeline": "订单进度",
       "tlCreated": "已下单",
@@ -1724,5 +1843,88 @@
     "label": "购买身份",
     "member": "会员购买",
     "guest": "游客可购"
+  },
+  "supplyPricing": {
+    "product": "商品",
+    "supply": "供货价",
+    "retail": "我的售价",
+    "profit": "预计利润",
+    "listing": "是否上架",
+    "listingSaveHint": "保存后生效",
+    "resizeColumn": "调整{column}列宽",
+    "action": "操作",
+    "minimum": "最低售价",
+    "maximum": "最高售价",
+    "defaultSpec": "默认规格",
+    "listed": "已上架",
+    "unlisted": "已下架",
+    "unpriced": "尚未定价",
+    "initialPriceHint": "预填最低售价，保存后生效",
+    "unsaved": "待保存",
+    "save": "保存并生效",
+    "saving": "保存中",
+    "saved": "已保存",
+    "saveFailed": "保存失败",
+    "loadFailed": "加载失败",
+    "loading": "正在加载",
+    "restoreProduct": "恢复商品展示",
+    "unsavedPrompt": "有未保存的定价修改，请选择保存、放弃或留在当前页。保存失败的行会保留。",
+    "discard": "放弃修改",
+    "saveAll": "保存后继续",
+    "invalid": "请输入正金额，最多两位小数",
+    "supply_missing": "尚未配置供货价",
+    "supply_below_cost": "供货价低于成本，已暂停",
+    "range_conflict": "最低与最高售价冲突，已暂停",
+    "below_minimum": "售价低于最低售价",
+    "markup_exceeded": "售价超过最高售价",
+    "sku_inactive": "规格已停用",
+    "product_hidden": "商品整体隐藏",
+    "changed": "商品报价已更新，请重新确认价格后提交"
+  },
+  "resellerProductImages": {
+    "galleryTitle": "商品图",
+    "galleryDescription": "用于商品列表封面和详情页轮播，第一张为封面。",
+    "noPlatformDetail": "平台暂无详情内容，可上传本店详情图。",
+    "description": "可自定义本店商品主图和单张详情图。自定义详情图替换平台详情正文；名称、简介、规格、库存及交付由总店维护。操作后自动保存。",
+    "search": "搜索商品",
+    "searchButton": "搜索",
+    "refresh": "刷新",
+    "upload": "上传图片",
+    "restore": "恢复平台图片",
+    "platform": "使用平台图",
+    "custom": "使用自定义图",
+    "followPlatform": "随平台图片更新",
+    "cover": "封面",
+    "setCover": "设为封面",
+    "previous": "向前移动",
+    "next": "向后移动",
+    "delete": "删除图片",
+    "noImages": "暂无图片",
+    "limits": "支持 PNG、JPG、GIF、WebP，每张最多 500KB，每个商品最多 5 张自定义图片，第一张为封面。",
+    "saving": "正在保存…",
+    "saved": "已保存",
+    "uploading": "正在上传 {current}/{total}…",
+    "countError": "每个商品最多 5 张自定义图片，已上传的图片已保留。",
+    "sizeError": "图片不能为空，每张最多 500KB（512000 字节）。",
+    "formatError": "仅支持 PNG、JPG、GIF 或 WebP 图片。",
+    "refreshed": "已读取当前图片，请检查后重新操作。",
+    "saveFailed": "保存失败，请重试。",
+    "loadFailed": "图片加载失败，请重试。",
+    "refreshFailed": "无法确认保存结果，请先刷新图片。",
+    "waitSaving": "图片正在保存，请稍后离开。",
+    "loading": "正在加载…",
+    "empty": "没有匹配的商品",
+    "imageAlt": "商品图片 {index}",
+    "detailTitle": "商品详情图",
+    "detailDescription": "替换本店的整块详情正文，保留总店商品名称、简介和规格。",
+    "customDetail": "使用自定义详情图",
+    "platformDetail": "使用平台详情",
+    "restoreDetail": "恢复平台详情",
+    "replaceDetail": "替换详情图",
+    "uploadDetail": "上传详情图",
+    "followPlatformDetail": "尚未自定义，当前跟随平台详情正文。",
+    "detailLimits": "仅支持一张 PNG、JPG、GIF 或 WebP 详情图，最多 500KB。上传新图会替换旧图。",
+    "detailCountError": "详情图只能上传一张。",
+    "detailAlt": "自定义商品详情图"
   }
 }

@@ -147,9 +147,11 @@ assert_equal "builds exact GoReleaser asset name" \
   "dujiao-next_v1.5.0_Linux_x86_64.tar.gz" \
   "$(archive_name_for v1.5.0 x86_64)"
 assert_success "accepts trusted GitHub asset URL" validate_download_url \
+  "https://github.com/peicc-TheChosenOne/dujiao-next-cc/releases/download/v1.5.0/dujiao-next_v1.5.0_Linux_x86_64.tar.gz"
+assert_failure "rejects upstream repository asset URL" validate_download_url \
   "https://github.com/dujiao-next/dujiao-next/releases/download/v1.5.0/dujiao-next_v1.5.0_Linux_x86_64.tar.gz"
 assert_failure "rejects lookalike GitHub host" validate_download_url \
-  "https://github.com.evil.invalid/dujiao-next/dujiao-next/releases/download/v1.5.0/file.tar.gz"
+  "https://github.com.evil.invalid/peicc-TheChosenOne/dujiao-next-cc/releases/download/v1.5.0/file.tar.gz"
 assert_success "accepts GitHub release asset CDN" validate_effective_download_url \
   "https://release-assets.githubusercontent.com/github-production-release-asset/example"
 assert_failure "rejects lookalike release asset CDN" validate_effective_download_url \
@@ -162,11 +164,11 @@ cat > "$release_json" <<'JSON'
   "assets": [
     {
       "name": "dujiao-next_v1.5.0_Linux_x86_64.tar.gz",
-      "browser_download_url": "https://github.com/dujiao-next/dujiao-next/releases/download/v1.5.0/dujiao-next_v1.5.0_Linux_x86_64.tar.gz"
+      "browser_download_url": "https://github.com/peicc-TheChosenOne/dujiao-next-cc/releases/download/v1.5.0/dujiao-next_v1.5.0_Linux_x86_64.tar.gz"
     },
     {
       "name": "dujiao-next_1.5.0_checksums.txt",
-      "browser_download_url": "https://github.com/dujiao-next/dujiao-next/releases/download/v1.5.0/dujiao-next_1.5.0_checksums.txt"
+      "browser_download_url": "https://github.com/peicc-TheChosenOne/dujiao-next-cc/releases/download/v1.5.0/dujiao-next_1.5.0_checksums.txt"
     }
   ]
 }

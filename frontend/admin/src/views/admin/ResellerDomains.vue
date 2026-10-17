@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useDebounceFn } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import { adminAPI } from '@/api/admin'
@@ -109,6 +109,7 @@ const typeLabel = (type?: string) => {
 }
 
 const statusLabel = (status?: string) => {
+  if (status === 'provisioning') return t('admin.resellerDomains.status.provisioning')
   if (status === RESELLER_DOMAIN_STATUS_PENDING_REVIEW) return t('admin.resellerDomains.status.pendingReview')
   if (status === RESELLER_DOMAIN_STATUS_ACTIVE) return t('admin.resellerDomains.status.active')
   if (status === RESELLER_DOMAIN_STATUS_DISABLED) return t('admin.resellerDomains.status.disabled')
@@ -166,6 +167,22 @@ const disableDomain = async (row: AdminResellerDomain) => {
   }
 }
 
+const refreshDomain = async (row: AdminResellerDomain) => {
+  operatingId.value = row.id
+  try {
+    await adminAPI.refreshResellerDomain(row.id)
+    await fetchRows(pagination.value.page, { preserveRows: true })
+  } catch (err: any) { notifyError(err?.message || t('admin.resellerDomains.actions.refreshFailed')) }
+  finally { operatingId.value = null }
+}
+
+const pollTimer = setInterval(() => {
+  if (rows.value.some(row => row.root_domain && (row.status === 'provisioning' || row.status === RESELLER_DOMAIN_STATUS_PENDING_REVIEW))) {
+    void fetchRows(pagination.value.page, { preserveRows: true })
+  }
+}, 15000)
+onUnmounted(() => clearInterval(pollTimer))
+
 onMounted(() => {
   fetchRows()
 })
@@ -210,6 +227,7 @@ onMounted(() => {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="__all__">{{ t('admin.resellerDomains.filters.statusAll') }}</SelectItem>
+              <SelectItem value="provisioning">{{ t('admin.resellerDomains.status.provisioning') }}</SelectItem>
               <SelectItem :value="RESELLER_DOMAIN_STATUS_PENDING_REVIEW">{{ t('admin.resellerDomains.status.pendingReview') }}</SelectItem>
               <SelectItem :value="RESELLER_DOMAIN_STATUS_ACTIVE">{{ t('admin.resellerDomains.status.active') }}</SelectItem>
               <SelectItem :value="RESELLER_DOMAIN_STATUS_DISABLED">{{ t('admin.resellerDomains.status.disabled') }}</SelectItem>
@@ -285,7 +303,11 @@ onMounted(() => {
                 <span class="ml-1 font-mono text-muted-foreground">/ R#{{ item.reseller_id }}</span>
               </div>
             </TableCell>
-            <TableCell class="min-w-[220px] px-6 py-4 font-mono text-xs break-all">{{ item.domain }}</TableCell>
+            <TableCell class="min-w-[220px] px-6 py-4 text-xs break-all">
+              <div class="font-mono">{{ item.domain }}</div>
+              <div v-if="item.provisioning_status" class="mt-1 text-muted-foreground">{{ t(`admin.resellerDomains.provisioning.${item.provisioning_status}`) }}</div>
+              <div v-if="item.provisioning_error" class="mt-1 text-amber-600">{{ t(`admin.resellerDomains.errors.${item.provisioning_error}`) }}</div>
+            </TableCell>
             <TableCell class="px-6 py-4 text-xs text-foreground">{{ typeLabel(item.type) }}</TableCell>
             <TableCell class="px-6 py-4 text-xs">
               <span class="inline-flex rounded-full border px-2.5 py-1 text-xs" :class="verificationClass(item.verification_status)">
@@ -304,7 +326,7 @@ onMounted(() => {
               <div class="flex flex-wrap items-center justify-end gap-2">
                 <Button
                   size="sm"
-                  :disabled="operatingId === item.id || !getResellerDomainActionState(item.status).canApprove"
+                  :disabled="operatingId === item.id || !getResellerDomainActionState(item.status, item).canApprove"
                   @click="approveDomain(item)"
                 >
                   {{ t('admin.resellerDomains.actions.approve') }}
@@ -312,10 +334,13 @@ onMounted(() => {
                 <Button
                   size="sm"
                   variant="outline"
-                  :disabled="operatingId === item.id || !getResellerDomainActionState(item.status).canDisable"
+                  :disabled="operatingId === item.id || !getResellerDomainActionState(item.status, item).canDisable"
                   @click="disableDomain(item)"
                 >
                   {{ t('admin.resellerDomains.actions.disable') }}
+                </Button>
+                <Button v-if="item.type === RESELLER_DOMAIN_TYPE_CUSTOM && item.provisioning_status !== 'deleting'" size="sm" variant="outline" :disabled="operatingId === item.id" @click="refreshDomain(item)">
+                  {{ t('admin.resellerDomains.actions.refresh') }}
                 </Button>
               </div>
             </TableCell>

@@ -3,6 +3,7 @@ package application
 import (
 	"context"
 	"errors"
+	"sync"
 	"time"
 
 	"github.com/dujiao-next/internal/cache"
@@ -17,6 +18,13 @@ import (
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 )
+
+// dummyPasswordHash 在账号不存在时陪跑一次 bcrypt，使响应耗时与密码错误一致，避免按耗时枚举账号。
+// 必须是合法哈希：长度不足的字符串会被 bcrypt 立即拒绝，起不到抹平耗时的作用。
+var dummyPasswordHash = sync.OnceValue(func() []byte {
+	hash, _ := bcrypt.GenerateFromPassword([]byte("dujiao-next-timing-guard"), bcrypt.DefaultCost)
+	return hash
+})
 
 // Service 认证服务
 type Service struct {
@@ -136,7 +144,7 @@ func (s *Service) Login(username, password string) (*LoginResult, error) {
 		return nil, err
 	}
 	if admin == nil {
-		_ = bcrypt.CompareHashAndPassword([]byte("$2a$10$dummyhashtopreventtimingattacksxxxxxxxxxxxxxxxxxx"), []byte(password))
+		_ = bcrypt.CompareHashAndPassword(dummyPasswordHash(), []byte(password))
 		return nil, ErrInvalidCredentials
 	}
 	if err := s.VerifyPassword(admin.PasswordHash, password); err != nil {

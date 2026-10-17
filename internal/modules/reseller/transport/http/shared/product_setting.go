@@ -1,6 +1,7 @@
 package shared
 
 import (
+	resellercontract "github.com/dujiao-next/internal/modules/reseller/contract"
 	"strings"
 
 	resellerapplication "github.com/dujiao-next/internal/modules/reseller/application"
@@ -10,12 +11,13 @@ import (
 
 type ProductSettingRequest struct {
 	SKUID             uint   `json:"sku_id"`
-	IsListed          bool   `json:"is_listed"`
+	IsListed          *bool  `json:"is_listed"`
 	PricingMode       string `json:"pricing_mode"`
 	MarkupPercent     string `json:"markup_percent"`
 	FixedMarkupAmount string `json:"fixed_markup_amount"`
 	FixedPriceAmount  string `json:"fixed_price_amount"`
 	SortOrder         int    `json:"sort_order"`
+	PricingRevision   string `json:"pricing_revision"`
 }
 
 type ProductSettingsUpdateRequest struct {
@@ -27,6 +29,9 @@ func (req ProductSettingsUpdateRequest) ToInput() (resellerapplication.ProductSe
 		Settings: make([]resellerapplication.ProductSettingInput, 0, len(req.Settings)),
 	}
 	for _, item := range req.Settings {
+		if item.IsListed == nil {
+			return input, resellercontract.ErrPricingModeInvalid
+		}
 		markup, err := parseDecimal(item.MarkupPercent)
 		if err != nil {
 			return input, err
@@ -41,12 +46,14 @@ func (req ProductSettingsUpdateRequest) ToInput() (resellerapplication.ProductSe
 		}
 		input.Settings = append(input.Settings, resellerapplication.ProductSettingInput{
 			SKUID:             item.SKUID,
-			IsListed:          item.IsListed,
+			IsListed:          *item.IsListed,
 			PricingMode:       strings.TrimSpace(item.PricingMode),
 			MarkupPercent:     markup,
 			FixedMarkupAmount: fixedMarkup,
 			FixedPriceAmount:  fixedPrice,
 			SortOrder:         item.SortOrder,
+			PricingRevision:   item.PricingRevision,
+			VisibilityOnly:    item.FixedPriceAmount == "" && item.PricingMode == "",
 		})
 	}
 	return input, nil
@@ -57,6 +64,7 @@ func DetailDTOInput(detail *resellerapplication.ProductSettingDetail) dto.Resell
 		return dto.ResellerProductSettingDTOInput{}
 	}
 	return dto.ResellerProductSettingDTOInput{
+		Profile:          detail.Profile,
 		Product:          detail.Product,
 		Settings:         detail.Settings,
 		EffectiveBySKUID: decimalMapToStringMap(detail.EffectiveBySKUID),
@@ -68,6 +76,7 @@ func ListDTOInput(rows []resellerapplication.ProductSettingListRow) []dto.Resell
 	out := make([]dto.ResellerProductSettingDTOInput, 0, len(rows))
 	for i := range rows {
 		out = append(out, dto.ResellerProductSettingDTOInput{
+			Profile:          rows[i].Profile,
 			Product:          rows[i].Product,
 			Settings:         rows[i].Settings,
 			EffectiveBySKUID: decimalMapToStringMap(rows[i].EffectiveBySKUID),

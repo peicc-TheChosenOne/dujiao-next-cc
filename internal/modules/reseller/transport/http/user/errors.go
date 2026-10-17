@@ -2,6 +2,8 @@ package userhttp
 
 import (
 	"errors"
+	"github.com/dujiao-next/internal/i18n"
+	"net/http"
 
 	productcontract "github.com/dujiao-next/internal/modules/catalog/product/contract"
 
@@ -12,6 +14,22 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+func respondUserProductImagesError(c *gin.Context, err error) {
+	if errors.Is(err, resellermodule.ErrProductImagesChanged) {
+		response.ErrorWithHTTPStatus(c, http.StatusConflict, http.StatusConflict, i18n.T(i18n.ResolveLocale(c), "error.reseller_product_images_changed"))
+		return
+	}
+	if errors.Is(err, resellermodule.ErrProductImagesLimit) {
+		ginutil.RespondError(c, response.CodeBadRequest, "error.reseller_product_images_limit", nil)
+		return
+	}
+	if errors.Is(err, resellermodule.ErrProductImagesInvalid) || isUploadValidationError(err) {
+		ginutil.RespondError(c, response.CodeBadRequest, "error.reseller_product_images_invalid", nil)
+		return
+	}
+	respondUserProductSettingError(c, err, "error.save_failed")
+}
+
 type mappedError struct {
 	target error
 	code   int
@@ -19,6 +37,9 @@ type mappedError struct {
 }
 
 var userManagementErrorRules = []mappedError{
+	{target: resellermodule.ErrDomainLimit, code: response.CodeTooManyRequests, key: "error.reseller_domain_limit"},
+	{target: productcontract.ErrNotFound, code: response.CodeNotFound, key: "error.not_found"},
+	{target: resellermodule.ErrDomainStatusInvalid, code: response.CodeBadRequest, key: "error.reseller_domain_status_invalid"},
 	{target: resellermodule.ErrNotOpened, code: response.CodeBadRequest, key: "error.bad_request"},
 	{target: resellermodule.ErrApplyDisabled, code: response.CodeForbidden, key: "error.forbidden"},
 	{target: resellermodule.ErrProfileInactive, code: response.CodeBadRequest, key: "error.forbidden"},
@@ -50,6 +71,12 @@ func siteConfigFieldErrorKey(field string) string {
 		return "error.reseller_support_url_invalid"
 	case "image":
 		return "error.reseller_image_invalid"
+	case "banner":
+		return "error.reseller_banner_invalid"
+	case "banner_image":
+		return "error.reseller_banner_image_invalid"
+	case "banner_link":
+		return "error.reseller_banner_link_invalid"
 	case "link":
 		return "error.reseller_link_invalid"
 	default:
@@ -67,6 +94,7 @@ func isUploadValidationError(err error) bool {
 }
 
 var userProductSettingErrorRules = []mappedError{
+	{target: resellermodule.ErrPricingChanged, code: response.CodeBadRequest, key: "error.reseller_pricing_changed"},
 	{target: resellermodule.ErrNotOpened, code: response.CodeBadRequest, key: "error.bad_request"},
 	{target: resellermodule.ErrProfileInactive, code: response.CodeBadRequest, key: "error.forbidden"},
 	{target: productcontract.ErrProductSKUInvalid, code: response.CodeBadRequest, key: "error.order_item_invalid"},

@@ -86,6 +86,7 @@ type OrderItemRequest struct {
 
 // CreateOrderRequest 用户订单预览/创建请求体（preview 使用）。
 type CreateOrderRequest struct {
+	PricingRevision     string                  `json:"pricing_revision"`
 	Items               []OrderItemRequest      `json:"items" binding:"required"`
 	CouponCode          string                  `json:"coupon_code"`
 	AffiliateCode       string                  `json:"affiliate_code"`
@@ -95,6 +96,7 @@ type CreateOrderRequest struct {
 
 // CreateGuestOrderRequest 游客订单预览请求体。
 type CreateGuestOrderRequest struct {
+	PricingRevision     string                            `json:"pricing_revision"`
 	Email               string                            `json:"email" binding:"required"`
 	OrderPassword       string                            `json:"order_password" binding:"required"`
 	Items               []OrderItemRequest                `json:"items" binding:"required"`
@@ -115,6 +117,7 @@ type CreateOrderItem struct {
 
 // CreateOrderInput 用户订单预览输入。
 type CreateOrderInput struct {
+	PricingRevision     string `json:"pricing_revision"`
 	UserID              uint
 	Tenant              resellermodule.TenantContext
 	Items               []CreateOrderItem
@@ -127,6 +130,7 @@ type CreateOrderInput struct {
 
 // CreateGuestOrderInput 游客订单预览输入。
 type CreateGuestOrderInput struct {
+	PricingRevision     string `json:"pricing_revision"`
 	Email               string
 	OrderPassword       string
 	Locale              string
@@ -141,6 +145,7 @@ type CreateGuestOrderInput struct {
 
 // OrderPreview 订单金额预览。
 type OrderPreview struct {
+	PricingRevision         string             `json:"pricing_revision,omitempty"`
 	Currency                string             `json:"currency"`
 	OriginalAmount          money.Amount       `json:"original_amount"`
 	MemberDiscountAmount    money.Amount       `json:"member_discount_amount"`
@@ -210,6 +215,7 @@ func (h *PreviewHandler) PreviewOrder(c *gin.Context) {
 		AffiliateVisitorKey: req.AffiliateVisitorKey,
 		ClientIP:            c.ClientIP(),
 		ManualFormData:      req.ManualFormData,
+		PricingRevision:     req.PricingRevision,
 	})
 	if err != nil {
 		respondUserOrderPreviewError(c, err)
@@ -237,6 +243,7 @@ func (h *PreviewHandler) PreviewGuestOrder(c *gin.Context) {
 		AffiliateVisitorKey: req.AffiliateVisitorKey,
 		ClientIP:            c.ClientIP(),
 		ManualFormData:      req.ManualFormData,
+		PricingRevision:     req.PricingRevision,
 	})
 	if err != nil {
 		respondGuestOrderPreviewError(c, err)
@@ -345,6 +352,7 @@ var userOrderCommonErrorRules = []mappedError{
 	{target: productcontract.ErrProductPriceInvalid, code: response.CodeBadRequest, key: "error.product_price_invalid"},
 	{target: ErrProductNotAvailable, code: response.CodeBadRequest, key: "error.product_not_available"},
 	{target: productcontract.ErrResellerProductNotListed, code: response.CodeBadRequest, key: "error.reseller_product_not_listed"},
+	{target: resellermodule.ErrPricingChanged, code: response.CodeBadRequest, key: "error.reseller_pricing_changed"},
 	{target: resellermodule.ErrPriceBelowBase, code: response.CodeBadRequest, key: "error.reseller_price_invalid"},
 	{target: resellermodule.ErrMarkupExceeded, code: response.CodeBadRequest, key: "error.reseller_markup_exceeded"},
 	{target: ErrResellerCouponNotAllowed, code: response.CodeBadRequest, key: "error.reseller_coupon_not_allowed"},
@@ -394,6 +402,7 @@ var guestOrderCommonErrorRules = []mappedError{
 	{target: productcontract.ErrProductPriceInvalid, code: response.CodeBadRequest, key: "error.product_price_invalid"},
 	{target: ErrProductNotAvailable, code: response.CodeBadRequest, key: "error.product_not_available"},
 	{target: productcontract.ErrResellerProductNotListed, code: response.CodeBadRequest, key: "error.reseller_product_not_listed"},
+	{target: resellermodule.ErrPricingChanged, code: response.CodeBadRequest, key: "error.reseller_pricing_changed"},
 	{target: resellermodule.ErrPriceBelowBase, code: response.CodeBadRequest, key: "error.reseller_price_invalid"},
 	{target: resellermodule.ErrMarkupExceeded, code: response.CodeBadRequest, key: "error.reseller_markup_exceeded"},
 	{target: ErrResellerCouponNotAllowed, code: response.CodeBadRequest, key: "error.reseller_coupon_not_allowed"},

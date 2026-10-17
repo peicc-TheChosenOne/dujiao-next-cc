@@ -94,6 +94,8 @@ type SKUFormItem = {
   spec_values: Record<string, string>
   price_amount: number
   cost_price_amount: number
+  supply_price_amount: string
+  min_sale_price_amount: string
   manual_stock_total: number
   is_active: boolean
   sort_order: number
@@ -118,6 +120,19 @@ const createEmptyLocaleText = () => ({
   'en-US': '',
 })
 
+// resolveEditableSKURows 把接口返回的 SKU 列表转换为表单可编辑的规格行。
+//
+// 单规格商品在后端固定表示为「恰好一行 DEFAULT」，它承载价格与库存，并不是一条用户可见的
+// 规格。若把它填进规格列表，用户删掉它再保存时会被后端重新生成，表现为「关不掉规格配置」，
+// 所以这里只隐藏「有且仅有一行且编码为 DEFAULT」的情况；多规格中恰好叫 DEFAULT 的自定义
+// 编码属于真实规格，照常展示。
+const resolveEditableSKURows = (product: AdminProduct): SKUFormItem[] => {
+  const rows = Array.isArray(product.skus) ? product.skus : []
+  const isSingleSpecMode = rows.length === 1 && String(rows[0]?.sku_code || '').trim().toUpperCase() === 'DEFAULT'
+  if (isSingleSpecMode) return []
+  return rows.map((item: AdminProductSKU) => createSKUFormItem(item))
+}
+
 const createSKUFormItem = (raw?: Partial<AdminProductSKU>): SKUFormItem => ({
   id: Number(raw?.id || 0),
   sku_code: String(raw?.sku_code || '').trim(),
@@ -133,6 +148,8 @@ const createSKUFormItem = (raw?: Partial<AdminProductSKU>): SKUFormItem => ({
   },
   price_amount: Number(raw?.price_amount || 0),
   cost_price_amount: Number(raw?.cost_price_amount || 0),
+  supply_price_amount: raw?.supply_price_amount ?? "",
+  min_sale_price_amount: raw?.min_sale_price_amount ?? "",
   manual_stock_total: toSafeStockTotal(raw?.manual_stock_total),
   is_active: raw?.is_active ?? true,
   sort_order: Number(raw?.sort_order || 0),
@@ -148,6 +165,8 @@ const form = reactive({
   instructions: { 'zh-CN': '', 'zh-TW': '', 'en-US': '' } as LocalizedText,
   price_amount: 0,
   cost_price_amount: 0,
+  supply_price_amount: '',
+  min_sale_price_amount: '',
   images: [] as string[],
   tags: [] as string[],
   purchase_type: 'member',
@@ -430,6 +449,19 @@ const removeSKU = (index: number) => {
   form.skus.splice(index, 1)
 }
 
+const quoteFields = (item: { supply_price_amount: string; min_sale_price_amount: string }) => {
+  const parse = (value: string) => {
+    const text = String(value).trim()
+    if (!text) return null
+    if (!/^\d{1,18}(\.\d{1,2})?$/.test(text) || Number(text) <= 0) throw new Error(t('admin.supplyPricing.invalid'))
+    return text
+  }
+  return {
+    supply_price_amount: parse(item.supply_price_amount),
+    min_sale_price_amount: parse(item.min_sale_price_amount),
+  }
+}
+
 const normalizeSKUsForSubmit = () => {
   if (!form.skus.length) {
     return [] as Array<Record<string, unknown>>
@@ -462,6 +494,7 @@ const normalizeSKUsForSubmit = () => {
       spec_values: specValues,
       price_amount: priceAmount,
       cost_price_amount: Number(item.cost_price_amount) || 0,
+      ...quoteFields(item),
       manual_stock_total: manualStockTotal,
       is_active: isActive,
       sort_order: Number(item.sort_order) || 0,
@@ -490,6 +523,8 @@ const resetForm = () => {
     instructions: { 'zh-CN': '', 'zh-TW': '', 'en-US': '' },
     price_amount: 0,
     cost_price_amount: 0,
+    supply_price_amount: '',
+    min_sale_price_amount: '',
     images: [],
     tags: [],
     purchase_type: 'member',
@@ -538,6 +573,8 @@ const populateForm = (product: AdminProduct) => {
     instructions: (product as AdminProduct & { instructions?: LocalizedText }).instructions || { 'zh-CN': '', 'zh-TW': '', 'en-US': '' },
     price_amount: Number(product.price_amount || 0),
     cost_price_amount: Number(product.cost_price_amount || 0),
+    supply_price_amount: product.skus?.length === 1 ? product.skus[0]?.supply_price_amount ?? "" : "",
+    min_sale_price_amount: product.skus?.length === 1 ? product.skus[0]?.min_sale_price_amount ?? "" : "",
     images: imagesList,
     tags: tagsList,
     purchase_type: product.purchase_type || 'member',
@@ -546,7 +583,7 @@ const populateForm = (product: AdminProduct) => {
     stock_display_mode: product.stock_display_mode || 'exact',
     fulfillment_type: product.fulfillment_type || 'manual',
     manual_stock_total: resolveManualStockMetrics(product).total,
-    skus: Array.isArray(product.skus) ? product.skus.map((item: AdminProductSKU) => createSKUFormItem(item)) : [],
+    skus: resolveEditableSKURows(product),
     category_id: Number(product.category_id || 0) || null,
     payment_channel_ids: parsePaymentChannelIDs(product.payment_channel_ids),
     is_affiliate_enabled: Boolean(product.is_affiliate_enabled),
@@ -611,6 +648,7 @@ const handleSubmit = async () => {
       instructions: form.instructions,
       price_amount: effectivePrice,
       cost_price_amount: effectiveCostPrice,
+      ...(normalizedSKUs.length ? {} : quoteFields(form)),
       images: form.images,
       tags: form.tags,
       purchase_type: form.purchase_type,
@@ -1009,6 +1047,11 @@ watch(
                   </div>
                 </div>
               </div>
+              <div class="grid gap-3 md:grid-cols-2">
+                <div><Label>{{ t('admin.supplyPricing.supply') }}</Label><Input v-model="sku.supply_price_amount" inputmode="decimal" /></div>
+                <div><Label>{{ t('admin.supplyPricing.minimum') }}</Label><Input v-model="sku.min_sale_price_amount" inputmode="decimal" /></div>
+              </div>
+              <p class="text-xs text-muted-foreground">{{ t('admin.supplyPricing.description') }}</p>
             </div>
           </div>
 
@@ -1043,6 +1086,14 @@ watch(
               {{ t('admin.products.form.costPriceAmountSkuTip') }}
             </p>
             <p v-else-if="editingIsMapped" class="mt-1 text-xs text-muted-foreground">{{ t('admin.products.form.costPriceAutoFromUpstream') }}</p>
+          </div>
+
+          <div v-if="!form.skus.length" class="col-span-1 space-y-2 md:col-span-2">
+            <div class="grid gap-3 md:grid-cols-2">
+              <div><Label>{{ t('admin.supplyPricing.supply') }}</Label><Input v-model="form.supply_price_amount" inputmode="decimal" /></div>
+              <div><Label>{{ t('admin.supplyPricing.minimum') }}</Label><Input v-model="form.min_sale_price_amount" inputmode="decimal" /></div>
+            </div>
+            <p class="text-xs text-muted-foreground">{{ t('admin.supplyPricing.description') }}</p>
           </div>
 
           <div class="col-span-1">

@@ -7,6 +7,8 @@ import {
   isResellerSiteSeoConfigured,
   normalizeFooterLinksForForm,
   canEditResellerSiteConfig,
+  normalizeResellerBannerForForm,
+  getResellerBannerOverride,
 } from '../src/utils/resellerSiteConfig.ts'
 
 test('blank localized text includes all supported storefront locales', () => {
@@ -31,6 +33,22 @@ test('site config editing requires opened and editable snapshot', () => {
   assert.equal(canEditResellerSiteConfig({ opened: true, can_edit: true }), true)
   assert.equal(canEditResellerSiteConfig({ opened: true, can_edit: false }), false)
   assert.equal(canEditResellerSiteConfig(null), false)
+})
+
+test('legacy site config inherits the main banner and form edits retain both images', () => {
+  assert.equal(normalizeResellerBannerForForm(null).mode, 'inherit')
+  const banner = normalizeResellerBannerForForm({ mode: 'custom', image: '/desktop.png', mobile_image: '/mobile.png', link_type: 'none' })
+  assert.equal(banner.image, '/desktop.png')
+  assert.equal(banner.mobile_image, '/mobile.png')
+  assert.deepEqual(banner.title, blankLocalizedText())
+})
+
+test('only reseller tenants apply custom or hidden banners', () => {
+  assert.equal(getResellerBannerOverride('main', { mode: 'custom', image: '/alice.png' }), null)
+  assert.equal(getResellerBannerOverride('reseller', { mode: 'inherit' }), null)
+  assert.equal(getResellerBannerOverride('reseller', null), null)
+  assert.equal(getResellerBannerOverride('reseller', { mode: 'custom', image: '/alice.png' })?.image, '/alice.png')
+  assert.equal(getResellerBannerOverride('reseller', { mode: 'hidden' })?.mode, 'hidden')
 })
 
 test('localized text helpers require at least one non-empty value', () => {

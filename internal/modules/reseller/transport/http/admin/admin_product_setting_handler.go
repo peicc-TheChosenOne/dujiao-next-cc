@@ -1,12 +1,18 @@
 package adminhttp
 
 import (
+	"errors"
+	"net/http"
+	"strconv"
 	"strings"
+
+	"github.com/dujiao-next/internal/i18n"
 
 	resellerdomain "github.com/dujiao-next/internal/modules/reseller/domain"
 
 	auditlogapp "github.com/dujiao-next/internal/modules/auditlog/application"
 	resellermodule "github.com/dujiao-next/internal/modules/reseller/application"
+	resellercontract "github.com/dujiao-next/internal/modules/reseller/contract"
 	dto "github.com/dujiao-next/internal/modules/reseller/transport/http/presenter"
 	transportshared "github.com/dujiao-next/internal/modules/reseller/transport/http/shared"
 	"github.com/dujiao-next/internal/platform/http/ginutil"
@@ -29,6 +35,149 @@ type AdminProductSettingService interface {
 type AdminProductSettingHandler struct {
 	service AdminProductSettingService
 	audit   AuditRecorder
+	images  *resellermodule.ProductImageService
+}
+
+func (h *AdminProductSettingHandler) SetProductImages(service *resellermodule.ProductImageService) {
+	h.images = service
+}
+
+func (h *AdminProductSettingHandler) ListProductImages(c *gin.Context) {
+	page, size := ginutil.ParsePagination(c)
+	if size > 100 {
+		size = 100
+	}
+	resellerID, err := ginutil.ParseQueryUint(c.Query("reseller_id"), false)
+	if err != nil {
+		ginutil.RespondBindError(c, err)
+		return
+	}
+	productID, err := ginutil.ParseQueryUint(c.Query("product_id"), false)
+	if err != nil {
+		ginutil.RespondBindError(c, err)
+		return
+	}
+	rows, total, err := h.images.ListAdminProductImages(resellercontract.ProductImageAdminFilter{Page: page, PageSize: size, ResellerID: resellerID, ProductID: productID, Keyword: strings.TrimSpace(c.Query("keyword")), Scope: c.Query("scope"), ImageSource: c.Query("image_source"), DetailSource: c.Query("detail_source")})
+	if err != nil {
+		respondAdminProductImagesError(c, err)
+		return
+	}
+	result := make([]dto.AdminResellerProductImagesResp, 0, len(rows))
+	for _, row := range rows {
+		result = append(result, dto.NewAdminResellerProductImagesResp(row.Product, row.Config, row.Profile))
+	}
+	response.SuccessWithPage(c, result, response.BuildPagination(page, size, total))
+}
+
+func (h *AdminProductSettingHandler) GetProductImages(c *gin.Context) {
+	resellerID, productID, ok := parseAdminProductSettingParams(c)
+	if !ok {
+		return
+	}
+	state, err := h.images.GetAdminProductImages(resellerID, productID)
+	if err != nil {
+		respondAdminProductImagesError(c, err)
+		return
+	}
+	response.Success(c, dto.NewAdminResellerProductImagesResp(state.Product, state.Config, state.Profile))
+}
+
+func (h *AdminProductSettingHandler) UploadProductImage(c *gin.Context) {
+	h.uploadProductImage(c, false)
+}
+func (h *AdminProductSettingHandler) UploadProductDetailImage(c *gin.Context) {
+	h.uploadProductImage(c, true)
+}
+
+func (h *AdminProductSettingHandler) uploadProductImage(c *gin.Context, detail bool) {
+	resellerID, productID, ok := parseAdminProductSettingParams(c)
+	if !ok {
+		return
+	}
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, resellermodule.ProductImageMaxSize+64*1024)
+	file, err := c.FormFile("file")
+	if c.Request.MultipartForm != nil {
+		defer c.Request.MultipartForm.RemoveAll()
+	}
+	if err != nil || c.Request.MultipartForm == nil || len(c.Request.MultipartForm.File["file"]) != 1 {
+		respondAdminProductImagesError(c, resellercontract.ErrProductImagesInvalid)
+		return
+	}
+	revision, err := strconv.ParseUint(c.PostForm("revision"), 10, 64)
+	if err != nil {
+		respondAdminProductImagesError(c, resellercontract.ErrProductImagesInvalid)
+		return
+	}
+	state, err := h.images.UploadAdminProductImage(resellerID, productID, file, revision, c.PostForm("operation_id"), detail)
+	if err != nil {
+		respondAdminProductImagesError(c, err)
+		return
+	}
+	h.productImageSuccess(c, state, "reseller_product_image_upload")
+}
+
+func (h *AdminProductSettingHandler) UpdateProductImages(c *gin.Context) {
+	resellerID, productID, ok := parseAdminProductSettingParams(c)
+	if !ok {
+		return
+	}
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 16*1024)
+	var req struct {
+		Images      *[]string `json:"images" binding:"required"`
+		Revision    *uint64   `json:"revision" binding:"required"`
+		OperationID string    `json:"operation_id" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		ginutil.RespondBindError(c, err)
+		return
+	}
+	state, err := h.images.UpdateAdminProductImages(resellerID, productID, *req.Images, *req.Revision, req.OperationID)
+	if err != nil {
+		respondAdminProductImagesError(c, err)
+		return
+	}
+	h.productImageSuccess(c, state, "reseller_product_images_update")
+}
+
+func (h *AdminProductSettingHandler) ResetProductDetailImage(c *gin.Context) {
+	resellerID, productID, ok := parseAdminProductSettingParams(c)
+	if !ok {
+		return
+	}
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 16*1024)
+	var req struct {
+		Revision    *uint64 `json:"revision" binding:"required"`
+		OperationID string  `json:"operation_id" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		ginutil.RespondBindError(c, err)
+		return
+	}
+	state, err := h.images.ResetAdminProductDetailImage(resellerID, productID, *req.Revision, req.OperationID)
+	if err != nil {
+		respondAdminProductImagesError(c, err)
+		return
+	}
+	h.productImageSuccess(c, state, "reseller_product_detail_image_reset")
+}
+
+func (h *AdminProductSettingHandler) productImageSuccess(c *gin.Context, state *resellermodule.ProductImageState, action string) {
+	h.recordAudit(c, action, c.FullPath(), c.Request.Method, jsonmap.JSON{"reseller_id": state.Config.ResellerID, "product_id": state.Product.ID, "image_count": len(state.Config.Images), "custom_detail": state.Config.DetailImage != "", "revision": state.Config.Revision, "operation_id": state.Config.OperationID})
+	response.Success(c, dto.NewAdminResellerProductImagesResp(state.Product, state.Config, state.Profile))
+}
+
+func respondAdminProductImagesError(c *gin.Context, err error) {
+	var uploadError interface{ UploadValidationError() }
+	switch {
+	case errors.Is(err, resellercontract.ErrProductImagesChanged):
+		response.ErrorWithHTTPStatus(c, http.StatusConflict, http.StatusConflict, i18n.T(i18n.ResolveLocale(c), "error.reseller_product_images_changed"))
+	case errors.Is(err, resellercontract.ErrProductImagesLimit):
+		ginutil.RespondError(c, response.CodeBadRequest, "error.reseller_product_images_limit", nil)
+	case errors.Is(err, resellercontract.ErrProductImagesInvalid), errors.As(err, &uploadError):
+		ginutil.RespondError(c, response.CodeBadRequest, "error.reseller_product_images_invalid", nil)
+	default:
+		respondAdminProductSettingError(c, err)
+	}
 }
 
 func NewAdminProductSettingHandler(service AdminProductSettingService, audit AuditRecorder) *AdminProductSettingHandler {

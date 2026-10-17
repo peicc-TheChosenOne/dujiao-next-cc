@@ -1,7 +1,15 @@
+import DOMPurify from 'dompurify'
 import { getImageUrl } from './image'
 
+// 富文本来自后台编辑与上游站点导入，均不可信：在 DOMPurify 默认白名单基础上
+// 保留编辑器生成的链接 target，并去掉可伪造登录框或覆盖全站样式的元素。
+const RICH_HTML_SANITIZE_CONFIG = {
+    ADD_ATTR: ['target'],
+    FORBID_TAGS: ['style', 'form', 'input', 'button', 'textarea', 'select'],
+}
+
 /**
- * 将 HTML 内容中的图片路径转换为显示用的绝对路径
+ * 将 HTML 内容中的图片路径转换为显示用的绝对路径，并净化为可安全 v-html 的片段
  * /uploads/xxx -> http://domain/uploads/xxx
  */
 export function processHtmlForDisplay(html: string): string {
@@ -9,9 +17,11 @@ export function processHtmlForDisplay(html: string): string {
 
     // 匹配 src="/uploads/..."，支持单引号和双引号
     // 使用非贪婪匹配 .*?
-    return html.replace(/src=["'](\/uploads\/.*?)["']/g, (_, path) => {
+    const withImages = html.replace(/src=["'](\/uploads\/.*?)["']/g, (_, path) => {
         return `src="${getImageUrl(path)}"`
     })
+    // 必须在改写之后净化：对已净化的 HTML 再做正则替换可能把引号写进属性值，重新引入注入
+    return DOMPurify.sanitize(withImages, RICH_HTML_SANITIZE_CONFIG)
 }
 
 /**

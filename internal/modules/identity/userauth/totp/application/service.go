@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	userTotpIssuerDefault     = "Dujiao-Next-User"
+	userTotpIssuerDefault     = "AI大玩家"
 	userTotpPendingTTL        = 10 * time.Minute
 	userTotpEnableMaxFailures = 5
 	RecoveryCodeCount         = 10
@@ -32,11 +32,12 @@ const (
 
 // Service 用户 TOTP 业务服务
 type Service struct {
-	cfg      *config.Config
-	encKey   []byte
-	userRepo usercontract.Store
-	redis    *redis.Client
-	now      func() time.Time
+	securityReader interface{ GetLoginSecurityResellerID(uint) (uint, error) }
+	cfg            *config.Config
+	encKey         []byte
+	userRepo       usercontract.Store
+	redis          *redis.Client
+	now            func() time.Time
 }
 
 type Option func(*Service)
@@ -66,8 +67,29 @@ func NewService(cfg *config.Config, userRepo usercontract.Store, rds *redis.Clie
 	return service
 }
 
+var ErrManaged = errors.New("two-factor authentication is managed by the platform")
+
+func (s *Service) SetResellerSecurityReader(reader interface{ GetLoginSecurityResellerID(uint) (uint, error) }) {
+	s.securityReader = reader
+}
+func (s *Service) checkSelfManagement(userID uint) error {
+	if s.securityReader == nil {
+		return nil
+	}
+	id, err := s.securityReader.GetLoginSecurityResellerID(userID)
+	if err != nil {
+		return err
+	}
+	if id != 0 {
+		return ErrManaged
+	}
+	return nil
+}
+
 // Status 用户 2FA 状态
 type Status struct {
+	PlatformManaged        bool       `json:"platform_managed"`
+	VerificationRequired   bool       `json:"verification_required"`
 	Enabled                bool       `json:"enabled"`
 	EnabledAt              *time.Time `json:"enabled_at,omitempty"`
 	RecoveryCodesRemaining int        `json:"recovery_codes_remaining"`
@@ -100,6 +122,14 @@ func (s *Service) GetStatus(userID uint) (*Status, error) {
 		return nil, ErrNotFound
 	}
 	st := &Status{Enabled: user.TOTPEnabledAt != nil, EnabledAt: user.TOTPEnabledAt}
+	if s.securityReader != nil {
+		id, err := s.securityReader.GetLoginSecurityResellerID(userID)
+		if err != nil {
+			return nil, err
+		}
+		st.PlatformManaged = id != 0
+		st.VerificationRequired = id != 0 && !user.ResellerTOTPExempt
+	}
 	if user.RecoveryCodes != "" {
 		entries, err := totpapplication.DecodeRecoveryCodes(user.RecoveryCodes)
 		if err == nil {
@@ -116,6 +146,9 @@ func (s *Service) GetStatus(userID uint) (*Status, error) {
 
 // Setup 生成 pending secret + otpauth URL
 func (s *Service) Setup(userID uint) (*SetupResult, error) {
+	if err := s.checkSelfManagement(userID); err != nil {
+		return nil, err
+	}
 	user, err := s.userRepo.GetByID(userID)
 	if err != nil {
 		return nil, err
@@ -163,6 +196,9 @@ func (s *Service) Setup(userID uint) (*SetupResult, error) {
 
 // Enable 校验首次 code，启用 2FA，生成恢复码
 func (s *Service) Enable(userID uint, code string) (*EnableResult, error) {
+	if err := s.checkSelfManagement(userID); err != nil {
+		return nil, err
+	}
 	prepared, err := totpapplication.Enable(s, totpapplication.EnableInput{
 		AccountID:         userID,
 		EncryptionKey:     s.encKey,
@@ -178,6 +214,9 @@ func (s *Service) Enable(userID uint, code string) (*EnableResult, error) {
 
 // Disable 关闭 2FA
 func (s *Service) Disable(userID uint, code string, isRecoveryCode bool) error {
+	if err := s.checkSelfManagement(userID); err != nil {
+		return err
+	}
 	user, err := s.userRepo.GetByID(userID)
 	if err != nil {
 		return err
@@ -231,7 +270,15 @@ func (s *Service) RegenerateRecoveryCodes(userID uint, code string) ([]string, e
 	if err != nil {
 		return nil, err
 	}
-	if err := s.userRepo.UpdateRecoveryCodes(userID, codesJSON); err != nil {
+	if store, ok := s.userRepo.(usercontract.LoginSecurityStore); ok {
+		changed, err := store.UpdateRecoveryCodesIfCurrent(userID, user.TokenVersion, user.RecoveryCodes, codesJSON)
+		if err != nil {
+			return nil, err
+		}
+		if !changed {
+			return nil, totpapplication.ErrRecoveryCodeInvalid
+		}
+	} else if err := s.userRepo.UpdateRecoveryCodes(userID, codesJSON); err != nil {
 		return nil, err
 	}
 	return plaintext, nil
@@ -281,6 +328,9 @@ func (s *Service) VerifyChallengeRecoveryCode(userID uint, code string) error {
 // operatorID 仅用于让调用方留痕；service 内部不依赖它，但要求非零以避免来路不明的调用绕过审计。
 // 返回 (targetUser, error)：targetUser 供 handler 写审计日志（邮箱等）。
 func (s *Service) AdminResetUser2FA(operatorID, targetID uint) (*userdomain.User, error) {
+	if err := s.checkSelfManagement(targetID); err != nil {
+		return nil, err
+	}
 	if operatorID == 0 {
 		return nil, fmt.Errorf("operatorID is required for audit")
 	}
@@ -320,6 +370,16 @@ func (s *Service) consumeRecoveryCode(user *userdomain.User, code string) error 
 	js, err := totpapplication.MatchAndConsumeRecoveryCode(user.RecoveryCodes, code, s.now())
 	if err != nil {
 		return err
+	}
+	if store, ok := s.userRepo.(usercontract.LoginSecurityStore); ok {
+		changed, err := store.UpdateRecoveryCodesIfCurrent(user.ID, user.TokenVersion, user.RecoveryCodes, js)
+		if err != nil {
+			return err
+		}
+		if !changed {
+			return totpapplication.ErrRecoveryCodeInvalid
+		}
+		return nil
 	}
 	return s.userRepo.UpdateRecoveryCodes(user.ID, js)
 }

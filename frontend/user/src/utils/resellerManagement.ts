@@ -1,3 +1,5 @@
+import type { ResellerDomainData } from '../api/types'
+
 type ResellerManagementProfile = {
   status?: string
 }
@@ -32,10 +34,24 @@ export const getResellerProfileStatusKey = (status?: string) => {
 }
 
 export const getResellerDomainStatusKey = (status?: string) => {
+  if (status === 'provisioning') return 'provisioning'
   if (status === RESELLER_DOMAIN_STATUS_PENDING_REVIEW) return 'pendingReview'
   if (status === RESELLER_DOMAIN_STATUS_ACTIVE) return 'active'
   if (status === RESELLER_DOMAIN_STATUS_DISABLED) return 'disabled'
   return 'unknown'
+}
+
+export const groupResellerDomains = (domains: ResellerDomainData[]) => {
+  const groups = new Map<string, { rootDomain: string; domains: ResellerDomainData[] }>()
+  for (const domain of domains) {
+    const rootDomain = domain.root_domain || domain.domain.replace(/^www\./, '')
+    if (!groups.has(rootDomain)) groups.set(rootDomain, { rootDomain, domains: [] })
+    groups.get(rootDomain)!.domains.push(domain)
+  }
+  return [...groups.values()].map(group => ({
+    ...group,
+    domains: group.domains.sort((a, b) => Number(b.domain === group.rootDomain) - Number(a.domain === group.rootDomain)),
+  }))
 }
 
 export const isResellerProfileActive = (profile?: ResellerManagementProfile | null) =>

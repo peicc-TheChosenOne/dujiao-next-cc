@@ -13,6 +13,8 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+var ErrUserTOTPManaged = errors.New("reseller 2FA must be managed from reseller security")
+
 // UserTOTPService 是管理员重置用户 2FA 端口。
 type UserTOTPService interface {
 	AdminResetUser2FA(operatorID, userID uint) (*userdomain.User, error)
@@ -45,6 +47,8 @@ func (h *AdminUser2FAHandler) ResetUser2FA(c *gin.Context) {
 	target, err := h.userTOTP.AdminResetUser2FA(operatorID, userID)
 	if err != nil {
 		switch {
+		case errors.Is(err, ErrUserTOTPManaged):
+			ginutil.RespondError(c, response.CodeForbidden, "error.totp_platform_managed", nil)
 		case errors.Is(err, ErrNotFound):
 			ginutil.RespondError(c, response.CodeNotFound, "error.user_not_found", nil)
 		case errors.Is(err, ErrTOTPNotEnabled):

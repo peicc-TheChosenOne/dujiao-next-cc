@@ -34,6 +34,7 @@ func (r *Store) UpsertSiteConfig(input resellerdomain.SiteConfig) (*resellerdoma
 	existing.SiteName = input.SiteName
 	existing.Logo = input.Logo
 	existing.Favicon = input.Favicon
+	existing.BannerJSON = input.BannerJSON
 	existing.AnnouncementJSON = input.AnnouncementJSON
 	existing.SupportJSON = input.SupportJSON
 	existing.SEOJSON = input.SEOJSON

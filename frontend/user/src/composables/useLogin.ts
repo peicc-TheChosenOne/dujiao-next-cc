@@ -39,7 +39,7 @@ export function useLogin() {
 
   const brandSiteName = computed(() => {
     const siteName = String(appStore.config?.brand?.site_name || '').trim()
-    return siteName !== '' ? siteName : 'Dujiao-Next'
+    return siteName !== '' ? siteName : 'AI大玩家'
   })
 
   const email = ref('')
@@ -51,7 +51,7 @@ export function useLogin() {
     route.query.google2fa,
     userAuthStore.challengeToken,
   )
-  const step = ref<'password' | 'totp'>(
+  const step = ref<'password' | 'totp' | 'enrollment'>(
     resumeGoogleRedirect2FAOnMount ? 'totp' : 'password',
   )
   const totpMode = ref<'code' | 'recovery'>('code')
@@ -283,7 +283,7 @@ export function useLogin() {
   }
 
   const enter2FAStep = () => {
-    step.value = 'totp'
+    step.value = userAuthStore.challengeRequiresSetup ? 'enrollment' : 'totp'
     totpMode.value = 'code'
     totpCode.value = ''
     recoveryCode.value = ''
@@ -480,6 +480,8 @@ export function useLogin() {
     showPassword,
     rememberMe,
     // 2FA
+    handleEnrollmentBound: stopChallengeCountdown,
+    handleEnrollmentComplete: async (data: any) => { userAuthStore.acceptLogin(data); if (typeof route.query.redirect === 'string') await redirectAfterLogin(); else await router.push('/reseller') },
     step,
     totpMode,
     totpCode,

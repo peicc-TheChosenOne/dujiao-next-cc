@@ -29,6 +29,7 @@ type AdminManagementService interface {
 	ApproveDomain(ctx context.Context, adminID, domainID uint) (*resellerdomain.Domain, error)
 	DisableDomain(ctx context.Context, adminID, domainID uint) (*resellerdomain.Domain, error)
 	SetPrimaryDomain(ctx context.Context, adminID, domainID uint) (*resellerdomain.Domain, error)
+	RefreshDomain(ctx context.Context, adminID, domainID uint) (*resellerdomain.Domain, error)
 }
 
 type AuditRecorder interface {
@@ -79,14 +80,16 @@ func (h *AdminManagementHandler) ListProfiles(c *gin.Context) {
 	page, pageSize := ginutil.ParsePagination(c)
 	userID, _ := ginutil.ParseQueryUint(c.Query("user_id"), false)
 	rows, total, err := h.directory.ListProfiles(resellercontract.ProfileListFilter{
-		Page:             page,
-		PageSize:         pageSize,
-		UserID:           userID,
-		Status:           strings.TrimSpace(c.Query("status")),
-		SettlementStatus: strings.TrimSpace(c.Query("settlement_status")),
-		Keyword:          strings.TrimSpace(c.Query("keyword")),
-		CreatedFrom:      parseTimePointer(c.Query("created_from")),
-		CreatedTo:        parseTimePointer(c.Query("created_to")),
+		TwoFactorRequired: c.Query("two_factor_required"),
+		TwoFactorBinding:  c.Query("two_factor_binding"),
+		Page:              page,
+		PageSize:          pageSize,
+		UserID:            userID,
+		Status:            strings.TrimSpace(c.Query("status")),
+		SettlementStatus:  strings.TrimSpace(c.Query("settlement_status")),
+		Keyword:           strings.TrimSpace(c.Query("keyword")),
+		CreatedFrom:       parseTimePointer(c.Query("created_from")),
+		CreatedTo:         parseTimePointer(c.Query("created_to")),
 	})
 	if err != nil {
 		ginutil.RespondError(c, response.CodeInternal, "error.user_fetch_failed", err)
@@ -117,7 +120,7 @@ func (h *AdminManagementHandler) ListDomains(c *gin.Context) {
 		ginutil.RespondError(c, response.CodeInternal, "error.user_fetch_failed", err)
 		return
 	}
-	response.SuccessWithPage(c, rows, response.BuildPagination(page, pageSize, total))
+	response.SuccessWithPage(c, dto.NewAdminResellerDomainRespList(rows), response.BuildPagination(page, pageSize, total))
 }
 
 // ApproveProfile 审核通过分销商资料。
@@ -154,16 +157,18 @@ func (h *AdminManagementHandler) ApproveProfile(c *gin.Context) {
 		respondAdminManagementError(c, err)
 		return
 	}
-	h.recordAudit(c, "reseller_profile_approve", "/admin/resellers/profiles/:id/approve", gin.H{
-		"profile_id":  id,
-		"reseller_id": id,
-		"next_status": resellerdomain.ProfileStatusActive,
-	})
+	if !result.AlreadyApproved {
+		h.recordAudit(c, "reseller_profile_approve", "/admin/resellers/profiles/:id/approve", gin.H{
+			"profile_id":  id,
+			"reseller_id": id,
+			"next_status": resellerdomain.ProfileStatusActive,
+		})
+	}
 	var systemDomain any
 	if result.SystemDomain != nil {
 		systemDomain = dto.NewResellerDomainResp(result.SystemDomain)
 	}
-	response.Success(c, gin.H{"profile": result.Profile, "system_domain": systemDomain})
+	response.Success(c, gin.H{"profile": result.Profile, "system_domain": systemDomain, "already_approved": result.AlreadyApproved})
 }
 
 // UpdateProfile 更新分销商运营配置。
@@ -291,6 +296,10 @@ func (h *AdminManagementHandler) ApproveDomain(c *gin.Context) {
 // DisableDomain 禁用域名。
 func (h *AdminManagementHandler) DisableDomain(c *gin.Context) {
 	h.handleDomainAction(c, "reseller_domain_disable", "/admin/resellers/domains/:id/disable", h.management.DisableDomain)
+}
+
+func (h *AdminManagementHandler) RefreshDomain(c *gin.Context) {
+	h.handleDomainAction(c, "reseller_domain_refresh", "/admin/resellers/domains/:id/refresh", h.management.RefreshDomain)
 }
 
 // SetPrimaryDomain 将已启用且已验证域名设为主域名。

@@ -25,8 +25,10 @@ func Migrate(db *gorm.DB) error {
 	if err := db.AutoMigrate(
 		&resellerdomain.Profile{},
 		&resellerdomain.Domain{},
+		&resellerdomain.DomainCapacity{},
 		&resellerdomain.SiteConfig{},
 		&resellerdomain.ProductSetting{},
+		&resellerdomain.ProductImages{},
 		&resellerdomain.OrderSnapshot{},
 		&resellerdomain.LedgerEntry{},
 		&resellerdomain.WithdrawRequest{},
