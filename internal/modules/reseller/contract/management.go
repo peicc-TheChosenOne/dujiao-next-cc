@@ -9,14 +9,16 @@ import (
 
 // ProfileListFilter 管理端分销商资料过滤条件。
 type ProfileListFilter struct {
-	Page             int
-	PageSize         int
-	UserID           uint
-	Status           string
-	SettlementStatus string
-	Keyword          string
-	CreatedFrom      *time.Time
-	CreatedTo        *time.Time
+	TwoFactorRequired string
+	TwoFactorBinding  string
+	Page              int
+	PageSize          int
+	UserID            uint
+	Status            string
+	SettlementStatus  string
+	Keyword           string
+	CreatedFrom       *time.Time
+	CreatedTo         *time.Time
 }
 
 // DomainListFilter 管理端分销商域名过滤条件。
@@ -138,8 +140,22 @@ type ProductImageReader interface {
 
 type ProductImageStore interface {
 	ProductImageReader
+	GetProfileByID(id uint) (*resellerdomain.Profile, error)
+	ListAdminProductImages(filter ProductImageAdminFilter) ([]ProductImageAdminRow, int64, error)
 	GetProfileByUserID(userID uint) (*resellerdomain.Profile, error)
 	ListProductsWithSettings(filter ProductSettingListFilter) ([]ProductSettingProductRow, int64, error)
 	GetProductWithSettings(resellerID, productID uint) (*ProductSettingProductRow, error)
 	SaveProductImages(config resellerdomain.ProductImages, expectedRevision uint64) error
+}
+
+type ProductImageAdminFilter struct {
+	Page, PageSize                            int
+	ResellerID, ProductID                     uint
+	Keyword, Scope, ImageSource, DetailSource string
+}
+
+type ProductImageAdminRow struct {
+	Product productdomain.Product
+	Profile resellerdomain.Profile
+	Config  resellerdomain.ProductImages
 }

@@ -25,6 +25,8 @@ func RegisterProfileDetailRoutes(admin gin.IRoutes, handler *AdminProfileDetailH
 		panic("reseller admin profile detail routes: required dependency is nil")
 	}
 	admin.GET("/resellers/profiles/:id", handler.GetProfileDetail)
+	admin.PUT("/resellers/profiles/:id/login-security", handler.UpdateLoginSecurity)
+	admin.POST("/resellers/profiles/:id/login-security/reset", handler.ResetLoginSecurity)
 }
 
 func RegisterSiteConfigRoutes(admin gin.IRoutes, handler *AdminSiteConfigHandler) {
@@ -46,6 +48,12 @@ func RegisterProductSettingRoutes(admin gin.IRoutes, handler *AdminProductSettin
 	admin.POST("/resellers/product-settings/:reseller_id/:product_id/preview", handler.PreviewProductSettings)
 	admin.PUT("/resellers/product-settings/:reseller_id/:product_id", handler.UpdateProductSettings)
 	admin.DELETE("/resellers/product-settings/:reseller_id/:product_id", handler.ResetProductSetting)
+	admin.GET("/resellers/product-images", handler.ListProductImages)
+	admin.GET("/resellers/product-images/:reseller_id/:product_id", handler.GetProductImages)
+	admin.POST("/resellers/product-images/:reseller_id/:product_id/upload", handler.UploadProductImage)
+	admin.POST("/resellers/product-images/:reseller_id/:product_id/detail/upload", handler.UploadProductDetailImage)
+	admin.PUT("/resellers/product-images/:reseller_id/:product_id", handler.UpdateProductImages)
+	admin.PUT("/resellers/product-images/:reseller_id/:product_id/detail", handler.ResetProductDetailImage)
 }
 
 func RegisterOperationsOverviewRoutes(admin gin.IRoutes, handler *AdminOperationsHandler) {

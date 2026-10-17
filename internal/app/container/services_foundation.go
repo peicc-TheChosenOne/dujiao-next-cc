@@ -120,6 +120,8 @@ func (c *Container) initIdentityAndCatalogServices() {
 	c.TelegramAuthService = telegramauthapp.NewService(c.Config.TelegramAuth, telegramauthcache.Options()...)
 	c.GoogleAuthService = googleauthapp.NewService(c.Config.GoogleAuth)
 	c.UserAuthService = userauthapp.NewService(c.Config, c.UserStore, c.ExternalIdentityStore, c.EmailVerificationStore, c.SettingService, c.EmailSender, c.TelegramAuthService)
+	c.UserAuthService.SetResellerSecurityReader(c.ResellerStore)
+	c.UserTOTPService.SetResellerSecurityReader(c.ResellerStore)
 	c.UserAuthService.SetGoogleAuthService(c.GoogleAuthService)
 	c.UserAuthService.SetGoogleRedirectStore(userauthcachestore.NewGoogleRedirectStore())
 	c.UserAuthService.SetAuthUnitOfWork(userauthgormstore.New(gormdb.DB))

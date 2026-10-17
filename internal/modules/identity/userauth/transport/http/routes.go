@@ -55,6 +55,8 @@ func RegisterUser2FAAuthRoutes(auth gin.IRoutes, handler *User2FAHandler, rateLi
 		panic("user 2fa auth routes: required dependency is nil")
 	}
 	auth.POST("/login/verify-2fa", rateLimit, handler.VerifyUser2FA)
+	auth.POST("/login/2fa/setup", rateLimit, handler.SetupLoginEnrollment)
+	auth.POST("/login/2fa/enable", rateLimit, handler.CompleteLoginEnrollment)
 }
 
 // RegisterUser2FARoutes 注册登录态 2FA 管理端点。

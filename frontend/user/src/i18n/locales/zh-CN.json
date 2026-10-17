@@ -1062,6 +1062,22 @@
         "codeRequired": "请输入动态码",
         "recoveryRequired": "请输入恢复码",
         "verifyFailed": "验证失败，请确认输入是否正确"
+      },
+      "enrollment": {
+        "title": "绑定两步验证",
+        "subtitle": "完成绑定后即可进入分销控制台",
+        "hint": "分销商账号必须绑定验证器。请使用 1Password 或其他支持 TOTP 的验证器扫描二维码，也可手动输入密钥。若原验证器已被平台重置，请重新绑定。",
+        "qrAlt": "验证器绑定二维码",
+        "confirmBind": "确认绑定",
+        "download": "下载恢复码",
+        "saved": "我已妥善保存恢复码",
+        "continue": "进入控制台",
+        "copyFailed": "复制失败，请下载或手动保存恢复码",
+        "managed": "登录两步验证由平台管理。如需更换或重置验证器，请联系管理员。",
+        "paused": "平台已暂停此账号的登录两步验证，原绑定仍保留。",
+        "recoveryHint": "恢复码仅展示这一次。请保存在安全的位置，离开当前页面后无法再次查看。",
+        "policyRequired": "平台强制验证",
+        "policyPaused": "平台已暂停"
       }
     },
     "telegramCallback": {

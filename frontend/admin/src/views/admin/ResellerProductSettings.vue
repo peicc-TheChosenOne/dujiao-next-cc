@@ -19,6 +19,8 @@ import {
   RESELLER_PRICING_MODE_MARKUP_PERCENT,
 } from '@/constants/reseller'
 import IdCell from '@/components/IdCell.vue'
+import ResellerProductImagesPanel from '@/components/admin/ResellerProductImagesPanel.vue'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import ListPagination from '@/components/ListPagination.vue'
 import TableSkeleton from '@/components/TableSkeleton.vue'
 import { Button } from '@/components/ui/button'
@@ -39,6 +41,7 @@ import {
 
 const { t } = useI18n()
 const route = useRoute()
+const activeTab = ref('pricing')
 const loading = ref(true)
 const { refreshing, refreshList } = useListRefresh()
 const rows = ref<AdminResellerProductSetting[]>([])
@@ -394,6 +397,13 @@ onMounted(() => {
       </div>
     </div>
 
+    <Tabs v-model="activeTab">
+      <TabsList>
+        <TabsTrigger value="pricing">{{ t('admin.resellerProductImages.pricing') }}</TabsTrigger>
+        <TabsTrigger value="images">{{ t('admin.resellerProductImages.title') }}</TabsTrigger>
+      </TabsList>
+      <TabsContent value="images"><ResellerProductImagesPanel :reseller-id="filters.resellerId" /></TabsContent>
+      <TabsContent value="pricing" class="space-y-6">
     <div class="rounded-xl border border-border bg-card p-4 shadow-sm">
       <div class="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
         <div class="w-full md:w-64">
@@ -516,6 +526,8 @@ onMounted(() => {
       @change-page-size="changePageSize"
     />
 
+      </TabsContent>
+    </Tabs>
     <Dialog v-model:open="showEditor" @update:open="(value) => { if (!value) closeEditor() }">
       <DialogScrollContent class="w-[calc(100vw-1rem)] max-w-6xl p-4 sm:p-6" @interact-outside="(event) => event.preventDefault()">
         <DialogHeader>

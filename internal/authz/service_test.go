@@ -256,3 +256,21 @@ func TestImmutableBuiltinRoleRejectsPolicyMutationAndDeletion(t *testing.T) {
 		t.Fatal("rejected policy revoke must preserve builtin policy")
 	}
 }
+
+func TestResellerSecurityWritesRestrictedToSystemAdmin(t *testing.T) {
+	service := setupAuthzServiceTest(t)
+	if err := service.BootstrapBuiltinRoles(); err != nil {
+		t.Fatal(err)
+	}
+	for _, role := range []string{"operations", "support", "finance", "readonly_auditor", "system_admin"} {
+		if err := service.SetAdminRoles(100, []string{role}); err != nil {
+			t.Fatal(err)
+		}
+		for _, op := range []struct{ path, method string }{{"/admin/resellers/profiles/7/login-security", "PUT"}, {"/admin/resellers/profiles/7/login-security/reset", "POST"}} {
+			allowed, err := service.EnforceAdmin(100, op.path, op.method)
+			if err != nil || allowed != (role == "system_admin") {
+				t.Fatalf("%s %s %s: %v %v", role, op.method, op.path, allowed, err)
+			}
+		}
+	}
+}

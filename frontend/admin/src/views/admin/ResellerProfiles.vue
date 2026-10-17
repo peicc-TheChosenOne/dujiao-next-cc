@@ -74,6 +74,8 @@ const pagination = ref({
 })
 
 const filters = reactive({
+  twoFactorRequired: '__all__',
+  twoFactorBinding: '__all__',
   keyword: '',
   userId: '',
   status: '__all__',
@@ -108,6 +110,8 @@ const fetchRows = async (page = 1, options: ListFetchOptions = {}) => {
     const response = await adminAPI.getResellerProfiles({
       page,
       page_size: pagination.value.page_size,
+      two_factor_required: normalizeFilterValue(filters.twoFactorRequired) || undefined,
+      two_factor_binding: normalizeFilterValue(filters.twoFactorBinding) || undefined,
       keyword: filters.keyword || undefined,
       user_id: filters.userId || undefined,
       status: normalizeFilterValue(filters.status) || undefined,
@@ -345,6 +349,16 @@ onMounted(() => {
 
     <div class="rounded-xl border border-border bg-card p-4 shadow-sm">
       <div class="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+        <div class="w-full md:w-44">
+          <Select v-model="filters.twoFactorRequired" @update:modelValue="handleSearch"><SelectTrigger><SelectValue :placeholder="t('admin.loginSecurity.allPolicies')" /></SelectTrigger><SelectContent>
+            <SelectItem value="__all__">{{ t('admin.loginSecurity.allPolicies') }}</SelectItem><SelectItem value="true">{{ t('admin.loginSecurity.required') }}</SelectItem><SelectItem value="false">{{ t('admin.loginSecurity.paused') }}</SelectItem>
+          </SelectContent></Select>
+        </div>
+        <div class="w-full md:w-44">
+          <Select v-model="filters.twoFactorBinding" @update:modelValue="handleSearch"><SelectTrigger><SelectValue :placeholder="t('admin.loginSecurity.allBindings')" /></SelectTrigger><SelectContent>
+            <SelectItem value="__all__">{{ t('admin.loginSecurity.allBindings') }}</SelectItem><SelectItem value="bound">{{ t('admin.loginSecurity.bound') }}</SelectItem><SelectItem value="unbound">{{ t('admin.loginSecurity.unbound') }}</SelectItem><SelectItem value="reset_pending">{{ t('admin.loginSecurity.reset_pending') }}</SelectItem>
+          </SelectContent></Select>
+        </div>
         <div class="w-full md:w-56">
           <Input v-model="filters.keyword" :placeholder="t('admin.resellerProfiles.filters.keyword')" @update:modelValue="debouncedSearch" />
         </div>
@@ -398,6 +412,7 @@ onMounted(() => {
             <TableHead class="px-6 py-3">{{ t('admin.resellerProfiles.table.id') }}</TableHead>
             <TableHead class="min-w-[200px] px-6 py-3">{{ t('admin.resellerProfiles.table.user') }}</TableHead>
             <TableHead class="px-6 py-3">{{ t('admin.resellerProfiles.table.status') }}</TableHead>
+            <TableHead class="px-6 py-3">{{ t('admin.loginSecurity.title') }}</TableHead>
             <TableHead class="px-6 py-3">{{ t('admin.resellerProfiles.table.settlement') }}</TableHead>
             <TableHead class="px-6 py-3">{{ t('admin.resellerProfiles.table.defaultMarkup') }}</TableHead>
             <TableHead class="px-6 py-3">{{ t('admin.resellerProfiles.table.maxMarkup') }}</TableHead>
@@ -410,12 +425,12 @@ onMounted(() => {
         </TableHeader>
         <TableBody class="divide-y divide-border">
           <TableRow v-if="loading">
-            <TableCell :colspan="12" class="p-0">
-              <TableSkeleton :columns="12" :rows="5" />
+            <TableCell :colspan="13" class="p-0">
+              <TableSkeleton :columns="13" :rows="5" />
             </TableCell>
           </TableRow>
           <TableRow v-else-if="rows.length === 0">
-            <TableCell colspan="12" class="px-6 py-8 text-center text-muted-foreground">{{ t('admin.resellerProfiles.empty') }}</TableCell>
+            <TableCell colspan="13" class="px-6 py-8 text-center text-muted-foreground">{{ t('admin.resellerProfiles.empty') }}</TableCell>
           </TableRow>
           <TableRow v-for="item in rows" :key="item.id" class="hover:bg-muted/30">
             <TableCell class="px-4 py-4">
@@ -447,6 +462,7 @@ onMounted(() => {
                 {{ settlementLabel(item.settlement_status) }}
               </span>
             </TableCell>
+            <TableCell class="px-6 py-4 text-xs"><div>{{ t(item.login_security?.required === false ? 'admin.loginSecurity.paused' : 'admin.loginSecurity.required') }}</div><div class="mt-1 text-muted-foreground">{{ t(`admin.loginSecurity.${item.login_security?.binding_state || 'unbound'}`) }}</div></TableCell>
             <TableCell class="px-6 py-4 font-mono text-xs">{{ item.default_markup_percent || '0.00' }}</TableCell>
             <TableCell class="px-6 py-4 font-mono text-xs">{{ item.max_markup_percent || '0.00' }}</TableCell>
             <TableCell class="min-w-[180px] px-6 py-4 text-xs text-muted-foreground break-words">{{ item.apply_reason || '-' }}</TableCell>

@@ -43,6 +43,113 @@ type imageFixture struct {
 	product  productdomain.Product
 }
 
+func TestAdminProductImagesIndependentListSourcesAndLifecycle(t *testing.T) {
+	f := newImageFixture(t)
+	// 图片查询不得依赖定价记录。
+	if err := f.db.Where("reseller_id = ?", f.profile.ID).Delete(&resellerdomain.ProductSetting{}).Error; err != nil {
+		t.Fatal(err)
+	}
+	state, err := f.service.UploadAdminProductImage(f.profile.ID, f.product.ID, imageFile(t, "a.png", 0), 0, uuid.NewString(), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err = f.service.UploadAdminProductImage(f.profile.ID, f.product.ID, imageFile(t, "b.png", 0), state.Config.Revision, uuid.NewString(), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	images := []string{state.Config.Images[1], state.Config.Images[0]}
+	state, err = f.service.UpdateAdminProductImages(f.profile.ID, f.product.ID, images, state.Config.Revision, uuid.NewString())
+	if err != nil || !reflect.DeepEqual([]string(state.Config.Images), images) {
+		t.Fatalf("reorder: %+v %v", state, err)
+	}
+	state, err = f.service.UploadAdminProductImage(f.profile.ID, f.product.ID, imageFile(t, "detail.png", 0), state.Config.Revision, uuid.NewString(), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows, total, err := f.service.ListAdminProductImages(resellercontract.ProductImageAdminFilter{Page: 1, PageSize: 1, ImageSource: "custom", DetailSource: "custom"})
+	if err != nil || total != 1 || len(rows) != 1 || rows[0].Config.ResellerID != f.profile.ID {
+		t.Fatalf("custom list: %+v %d %v", rows, total, err)
+	}
+	rows, total, err = f.service.ListAdminProductImages(resellercontract.ProductImageAdminFilter{Page: 2, PageSize: 1})
+	if err != nil || total != 1 || len(rows) != 0 {
+		t.Fatalf("pagination: %d %d %v", len(rows), total, err)
+	}
+	if _, err := f.service.UpdateAdminProductImages(f.profile.ID, f.product.ID, nil, 0, uuid.NewString()); !errors.Is(err, resellercontract.ErrProductImagesChanged) {
+		t.Fatalf("stale update: %v", err)
+	}
+	if _, err := f.service.UpdateAdminProductImages(f.profile.ID, f.product.ID, []string{"https://example.test/foreign.png"}, state.Config.Revision, uuid.NewString()); !errors.Is(err, resellercontract.ErrProductImagesInvalid) {
+		t.Fatalf("foreign image: %v", err)
+	}
+	state, err = f.service.UpdateAdminProductImages(f.profile.ID, f.product.ID, []string{}, state.Config.Revision, uuid.NewString())
+	if err != nil || state.Config.DetailImage == "" {
+		t.Fatalf("independent gallery reset: %+v %v", state, err)
+	}
+	rows, total, err = f.service.ListAdminProductImages(resellercontract.ProductImageAdminFilter{ImageSource: "platform", DetailSource: "custom"})
+	if err != nil || total != 1 || len(rows) != 1 {
+		t.Fatalf("detail-only list: %+v %d %v", rows, total, err)
+	}
+	userState, err := f.service.GetUserProductImages(f.user.ID, f.product.ID)
+	if err != nil || userState.Config.DetailImage != state.Config.DetailImage {
+		t.Fatalf("user/admin parity: %+v %v", userState, err)
+	}
+	other, err := f.service.GetUserProductImages(f.other.ID, f.product.ID)
+	if err != nil || len(other.Config.Images) != 0 || other.Config.DetailImage != "" {
+		t.Fatalf("tenant isolation: %+v %v", other, err)
+	}
+	state, err = f.service.ResetAdminProductDetailImage(f.profile.ID, f.product.ID, state.Config.Revision, uuid.NewString())
+	if err != nil || state.Config.ID == 0 || state.Config.Revision != 6 {
+		t.Fatalf("reset preserves version: %+v %v", state, err)
+	}
+	_, total, err = f.service.ListAdminProductImages(resellercontract.ProductImageAdminFilter{})
+	if err != nil || total != 0 {
+		t.Fatalf("empty overrides omitted: %d %v", total, err)
+	}
+	rows, total, err = f.service.ListAdminProductImages(resellercontract.ProductImageAdminFilter{Scope: "all", ResellerID: f.profile.ID, ProductID: f.product.ID})
+	if err != nil || total != 1 || rows[0].Config.Revision != state.Config.Revision {
+		t.Fatalf("all active products: %+v %d %v", rows, total, err)
+	}
+	for _, input := range []resellercontract.ProductImageAdminFilter{{Scope: "all"}, {Scope: "invalid"}, {ImageSource: "invalid"}, {DetailSource: "invalid"}} {
+		if _, _, err := f.service.ListAdminProductImages(input); !errors.Is(err, resellercontract.ErrProductImagesInvalid) {
+			t.Fatalf("invalid filter %+v: %v", input, err)
+		}
+	}
+}
+
+func TestAdminProductImagesReadonlyInactiveAndValidation(t *testing.T) {
+	f := newImageFixture(t)
+	for _, file := range []*multipart.FileHeader{imageFile(t, "oversize.png", int(resellerapp.ProductImageMaxSize)+1), imageFileBytes(t, "fake.png", []byte("not an image"))} {
+		if _, err := f.service.UploadAdminProductImage(f.profile.ID, f.product.ID, file, 0, uuid.NewString(), false); err == nil {
+			t.Fatal("invalid upload accepted")
+		}
+	}
+	if err := f.db.Model(&f.profile).Update("status", resellerdomain.ProfileStatusDisabled).Error; err != nil {
+		t.Fatal(err)
+	}
+	state, err := f.service.GetAdminProductImages(f.profile.ID, f.product.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if presenter.NewAdminResellerProductImagesResp(state.Product, state.Config, state.Profile).CanEdit {
+		t.Fatal("disabled reseller is editable")
+	}
+	if _, err := f.service.UploadAdminProductImage(f.profile.ID, f.product.ID, imageFile(t, "a.png", 0), 0, uuid.NewString(), false); !errors.Is(err, resellercontract.ErrProfileInactive) {
+		t.Fatalf("disabled write: %v", err)
+	}
+	if err := f.db.Model(&f.profile).Update("status", resellerdomain.ProfileStatusActive).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := f.db.Model(&f.product).Update("is_active", false).Error; err != nil {
+		t.Fatal(err)
+	}
+	state, err = f.service.GetAdminProductImages(f.profile.ID, f.product.ID)
+	if err != nil || presenter.NewAdminResellerProductImagesResp(state.Product, state.Config, state.Profile).CanEdit {
+		t.Fatalf("inactive product read: %+v %v", state, err)
+	}
+	if _, err := f.service.UploadAdminProductImage(f.profile.ID, f.product.ID, imageFile(t, "a.png", 0), 0, uuid.NewString(), false); err == nil {
+		t.Fatal("inactive product write accepted")
+	}
+}
+
 func TestProductImagesDetailReplacementIsolationAndGalleryIndependence(t *testing.T) {
 	f := newImageFixture(t)
 	platformContent := jsonmap.JSON{"zh-CN": "总店详情", "zh-TW": "總店詳情", "en-US": "Platform details"}

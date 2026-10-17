@@ -80,14 +80,16 @@ func (h *AdminManagementHandler) ListProfiles(c *gin.Context) {
 	page, pageSize := ginutil.ParsePagination(c)
 	userID, _ := ginutil.ParseQueryUint(c.Query("user_id"), false)
 	rows, total, err := h.directory.ListProfiles(resellercontract.ProfileListFilter{
-		Page:             page,
-		PageSize:         pageSize,
-		UserID:           userID,
-		Status:           strings.TrimSpace(c.Query("status")),
-		SettlementStatus: strings.TrimSpace(c.Query("settlement_status")),
-		Keyword:          strings.TrimSpace(c.Query("keyword")),
-		CreatedFrom:      parseTimePointer(c.Query("created_from")),
-		CreatedTo:        parseTimePointer(c.Query("created_to")),
+		TwoFactorRequired: c.Query("two_factor_required"),
+		TwoFactorBinding:  c.Query("two_factor_binding"),
+		Page:              page,
+		PageSize:          pageSize,
+		UserID:            userID,
+		Status:            strings.TrimSpace(c.Query("status")),
+		SettlementStatus:  strings.TrimSpace(c.Query("settlement_status")),
+		Keyword:           strings.TrimSpace(c.Query("keyword")),
+		CreatedFrom:       parseTimePointer(c.Query("created_from")),
+		CreatedTo:         parseTimePointer(c.Query("created_to")),
 	})
 	if err != nil {
 		ginutil.RespondError(c, response.CodeInternal, "error.user_fetch_failed", err)

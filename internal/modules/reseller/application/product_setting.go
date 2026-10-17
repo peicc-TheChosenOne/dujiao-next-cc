@@ -3,6 +3,7 @@ package application
 import (
 	"mime/multipart"
 	"strings"
+	"time"
 
 	resellercontract "github.com/dujiao-next/internal/modules/reseller/contract"
 
@@ -33,6 +34,7 @@ type ProductImageService struct {
 type ProductImageState struct {
 	Product productdomain.Product
 	Config  resellerdomain.ProductImages
+	Profile *resellerdomain.Profile
 }
 
 func NewProductImageService(store resellercontract.ProductImageStore, uploader ProductImageUploader) *ProductImageService {
@@ -86,11 +88,19 @@ func (s *ProductImageService) GetUserProductImages(userID, productID uint) (*Pro
 	if err != nil {
 		return nil, err
 	}
+	state, err := s.getProductImages(profile, productID)
+	if err == nil && (!state.Product.IsActive || !state.Product.Category.IsActive || state.Product.Category.DeletedAt != nil) {
+		return nil, productcontract.ErrNotFound
+	}
+	return state, err
+}
+
+func (s *ProductImageService) getProductImages(profile *resellerdomain.Profile, productID uint) (*ProductImageState, error) {
 	row, err := s.store.GetProductWithSettings(profile.ID, productID)
 	if err != nil {
 		return nil, err
 	}
-	if row == nil || !row.Product.IsActive || !row.Product.Category.IsActive || row.Product.Category.DeletedAt != nil {
+	if row == nil {
 		return nil, productcontract.ErrNotFound
 	}
 	configs, err := s.store.ListProductImages(profile.ID, []uint{productID})
@@ -101,7 +111,80 @@ func (s *ProductImageService) GetUserProductImages(userID, productID uint) (*Pro
 	if len(configs) > 0 {
 		config = configs[0]
 	}
-	return &ProductImageState{Product: row.Product, Config: config}, nil
+	return &ProductImageState{Product: row.Product, Config: config, Profile: profile}, nil
+}
+
+func (s *ProductImageService) ListAdminProductImages(input resellercontract.ProductImageAdminFilter) ([]ProductImageState, int64, error) {
+	if input.Scope != "" && input.Scope != "customized" && input.Scope != "all" || input.Scope == "all" && input.ResellerID == 0 {
+		return nil, 0, resellercontract.ErrProductImagesInvalid
+	}
+	for _, source := range []string{input.ImageSource, input.DetailSource} {
+		if source != "" && source != "custom" && source != "platform" {
+			return nil, 0, resellercontract.ErrProductImagesInvalid
+		}
+	}
+	rows, total, err := s.store.ListAdminProductImages(input)
+	if err != nil {
+		return nil, 0, err
+	}
+	states := make([]ProductImageState, 0, len(rows))
+	for _, row := range rows {
+		states = append(states, ProductImageState{Product: row.Product, Config: row.Config, Profile: &row.Profile})
+	}
+	return states, total, nil
+}
+
+func (s *ProductImageService) GetAdminProductImages(resellerID, productID uint) (*ProductImageState, error) {
+	profile, err := s.store.GetProfileByID(resellerID)
+	if err != nil {
+		return nil, err
+	}
+	if profile == nil {
+		return nil, productcontract.ErrNotFound
+	}
+	return s.getProductImages(profile, productID)
+}
+
+// 管理员通过受信任的分销商资料定位用户，所有写操作复用前台的范围和版本校验。
+func (s *ProductImageService) adminImageUser(resellerID uint) (uint, error) {
+	profile, err := s.store.GetProfileByID(resellerID)
+	if err != nil {
+		return 0, err
+	}
+	if profile == nil {
+		return 0, productcontract.ErrNotFound
+	}
+	if profile.Status != resellerdomain.ProfileStatusActive {
+		return 0, resellercontract.ErrProfileInactive
+	}
+	return profile.UserID, nil
+}
+
+func (s *ProductImageService) UploadAdminProductImage(resellerID, productID uint, file *multipart.FileHeader, revision uint64, operationID string, detail bool) (*ProductImageState, error) {
+	uid, err := s.adminImageUser(resellerID)
+	if err != nil {
+		return nil, err
+	}
+	if detail {
+		return s.UploadUserProductDetailImage(uid, productID, file, revision, operationID)
+	}
+	return s.UploadUserProductImage(uid, productID, file, revision, operationID)
+}
+
+func (s *ProductImageService) UpdateAdminProductImages(resellerID, productID uint, images []string, revision uint64, operationID string) (*ProductImageState, error) {
+	uid, err := s.adminImageUser(resellerID)
+	if err != nil {
+		return nil, err
+	}
+	return s.UpdateUserProductImages(uid, productID, images, revision, operationID)
+}
+
+func (s *ProductImageService) ResetAdminProductDetailImage(resellerID, productID uint, revision uint64, operationID string) (*ProductImageState, error) {
+	uid, err := s.adminImageUser(resellerID)
+	if err != nil {
+		return nil, err
+	}
+	return s.ResetUserProductDetailImage(uid, productID, revision, operationID)
 }
 
 func (s *ProductImageService) saveImages(state *ProductImageState, images []string, revision uint64, operationID string) (*ProductImageState, error) {
@@ -115,7 +198,8 @@ func (s *ProductImageService) saveImages(state *ProductImageState, images []stri
 		return nil, err
 	}
 	config.Revision = revision + 1
-	return &ProductImageState{Product: state.Product, Config: config}, nil
+	config.UpdatedAt = time.Now()
+	return &ProductImageState{Product: state.Product, Config: config, Profile: state.Profile}, nil
 }
 
 func (s *ProductImageService) UpdateUserProductImages(userID, productID uint, images []string, revision uint64, operationID string) (*ProductImageState, error) {

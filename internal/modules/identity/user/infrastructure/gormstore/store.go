@@ -70,11 +70,20 @@ func (r *Store) Update(user *userdomain.User) error {
 	if user == nil || user.ID == 0 {
 		return nil
 	}
-	return r.db.Model(&userdomain.User{}).
-		Where("id = ? AND deleted_at IS NULL", user.ID).
-		Select("*").
-		Omit("id", "deleted_at").
-		Updates(user).Error
+	query := r.db.Model(&userdomain.User{}).Where("id = ? AND deleted_at IS NULL AND token_version <= ?", user.ID, user.TokenVersion)
+	if user.ResellerSecurityUpdatedAt == nil {
+		query = query.Where("reseller_security_updated_at IS NULL")
+	} else {
+		query = query.Where("reseller_security_updated_at = ?", user.ResellerSecurityUpdatedAt)
+	}
+	result := query.Select("*").Omit("id", "deleted_at", "reseller_totp_exempt", "reseller_security_action", "reseller_security_reason", "reseller_security_admin_id", "reseller_security_updated_at", "reseller_totp_reset_at").Updates(user)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return errors.New("account security state changed")
+	}
+	return nil
 }
 
 // IncrementTotalRecharged 原子累加用户累计充值金额。
@@ -287,4 +296,55 @@ func applyPagination(query *gorm.DB, page, pageSize int) *gorm.DB {
 		page = 1
 	}
 	return query.Offset((page - 1) * pageSize).Limit(pageSize)
+}
+
+func (r *Store) UpdateResellerLoginSecurity(id uint, version uint64, required, reset bool, adminID uint, reason string, now time.Time) (bool, error) {
+	action := "require"
+	if !required {
+		action = "pause"
+	}
+	updates := map[string]interface{}{
+		"reseller_totp_exempt": !required, "reseller_security_action": action,
+		"reseller_security_reason": reason, "reseller_security_admin_id": adminID,
+		"reseller_security_updated_at": now, "token_version": gorm.Expr("token_version + 1"),
+		"token_invalid_before": now, "totp_pending_secret": "", "totp_pending_expires_at": nil, "totp_pending_challenge": "",
+	}
+	if reset {
+		updates["reseller_totp_exempt"] = false
+		updates["reseller_security_action"] = "reset"
+		updates["reseller_totp_reset_at"] = now
+		updates["totp_secret"] = ""
+		updates["totp_enabled_at"] = nil
+		updates["recovery_codes"] = ""
+	}
+	res := r.db.Model(&userdomain.User{}).Where("id = ? AND token_version = ? AND deleted_at IS NULL", id, version).Updates(updates)
+	return res.RowsAffected == 1, res.Error
+}
+
+func (r *Store) SetEnrollmentPending(id uint, version uint64, owner, secret string, expires time.Time) (bool, error) {
+	res := r.db.Model(&userdomain.User{}).
+		Where("id = ? AND token_version = ? AND totp_enabled_at IS NULL AND deleted_at IS NULL", id, version).
+		Updates(map[string]interface{}{"totp_pending_challenge": owner, "totp_pending_secret": secret, "totp_pending_expires_at": expires})
+	return res.RowsAffected == 1, res.Error
+}
+
+func (r *Store) CommitEnrollment(id uint, version uint64, owner, pending, secret, codes string, now time.Time) (bool, error) {
+	res := r.db.Model(&userdomain.User{}).
+		Where("id = ? AND token_version = ? AND totp_pending_challenge = ? AND totp_pending_secret = ? AND totp_enabled_at IS NULL AND totp_pending_expires_at > ? AND deleted_at IS NULL", id, version, owner, pending, now).
+		Updates(map[string]interface{}{"totp_secret": secret, "totp_enabled_at": now, "recovery_codes": codes,
+			"totp_pending_secret": "", "totp_pending_expires_at": nil, "totp_pending_challenge": "",
+			"token_version": gorm.Expr("token_version + 1"), "token_invalid_before": now})
+	return res.RowsAffected == 1, res.Error
+}
+
+func (r *Store) UpdateRecoveryCodesIfCurrent(id uint, version uint64, previous, replacement string) (bool, error) {
+	res := r.db.Model(&userdomain.User{}).
+		Where("id = ? AND token_version = ? AND recovery_codes = ? AND totp_enabled_at IS NOT NULL AND deleted_at IS NULL", id, version, previous).
+		Update("recovery_codes", replacement)
+	return res.RowsAffected == 1, res.Error
+}
+
+func (r *Store) TouchLoginIfCurrent(id uint, version uint64, now time.Time) (bool, error) {
+	result := r.db.Model(&userdomain.User{}).Where("id = ? AND token_version = ? AND status = ? AND deleted_at IS NULL", id, version, constants.UserStatusActive).Update("last_login_at", now)
+	return result.RowsAffected == 1, result.Error
 }

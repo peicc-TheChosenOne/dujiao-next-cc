@@ -2,6 +2,7 @@ package resellerbootstrap
 
 import (
 	"github.com/dujiao-next/internal/app/container"
+	userauthapp "github.com/dujiao-next/internal/modules/identity/userauth/application"
 	adminhttp "github.com/dujiao-next/internal/modules/reseller/transport/http/admin"
 	userhttp "github.com/dujiao-next/internal/modules/reseller/transport/http/user"
 )
@@ -21,6 +22,11 @@ type Handlers struct {
 }
 
 func New(c *container.Container) Handlers {
+	productSettings := adminhttp.NewAdminProductSettingHandler(c.ResellerProductSettingService, c.AuthzAuditService)
+	productSettings.SetProductImages(c.ResellerProductImageService)
+	detail := adminhttp.NewAdminProfileDetailHandler(c.ResellerStore, c.ResellerProductSettingService, c.ResellerAccountingQuery, c.ResellerOrderService)
+	detail.SetLoginSecurity(resellerSecurityAdapter{c.UserAuthService}, c.AuthzAuditService)
+
 	return Handlers{
 		User: userhttp.NewUserHandler(
 			c.ResellerManagementService,
@@ -37,19 +43,22 @@ func New(c *container.Container) Handlers {
 		AdminManagement: adminhttp.NewAdminManagementHandler(
 			c.ResellerManagementService, c.ResellerStore, c.AuthzAuditService,
 		),
-		AdminProfileDetail: adminhttp.NewAdminProfileDetailHandler(
-			c.ResellerStore, c.ResellerProductSettingService, c.ResellerAccountingQuery, c.ResellerOrderService,
-		),
+		AdminProfileDetail: detail,
 		AdminSiteConfig: adminhttp.NewAdminSiteConfigHandler(
 			c.ResellerSiteConfigService, c.ResellerStore, c.AuthzAuditService,
 		),
-		AdminProductSetting: adminhttp.NewAdminProductSettingHandler(
-			c.ResellerProductSettingService, c.AuthzAuditService,
-		),
-		AdminOperations: adminhttp.NewAdminOperationsHandler(c.ResellerOperationsService),
+		AdminProductSetting: productSettings,
+		AdminOperations:     adminhttp.NewAdminOperationsHandler(c.ResellerOperationsService),
 		AdminFinance: adminhttp.NewAdminFinanceHandler(
 			c.ResellerAccountingQuery,
 			c.ResellerAccountingWithdraw,
 		),
 	}
+}
+
+type resellerSecurityAdapter struct{ auth *userauthapp.Service }
+
+func (a resellerSecurityAdapter) UpdateResellerLoginSecurity(adminID, userID uint, required, reset bool, reason string) error {
+	_, err := a.auth.UpdateResellerLoginSecurity(adminID, userID, required, reset, reason)
+	return err
 }

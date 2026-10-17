@@ -5,6 +5,8 @@ import { GOOGLE_REDIRECT_API_PATHS } from '../utils/googleRedirect'
 export const userAuthAPI = {
     sendVerifyCode: (data: any) => userApi.post('/auth/send-verify-code', data),
     register: (data: any) => userApi.post('/auth/register', data),
+    setupLogin2FA: (data: { challenge_token: string }) => userApi.post('/auth/login/2fa/setup', data),
+    enableLogin2FA: (data: { challenge_token: string; code: string }) => userApi.post('/auth/login/2fa/enable', data),
     login: (data: any) => userApi.post('/auth/login', data),
     verify2FA: (data: { challenge_token: string; code?: string; recovery_code?: string }) =>
         userApi.post('/auth/login/verify-2fa', data),

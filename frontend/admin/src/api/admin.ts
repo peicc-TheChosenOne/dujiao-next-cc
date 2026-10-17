@@ -17,6 +17,7 @@ import type {
   AdminResellerProfileApprovePayload,
   AdminResellerProfileUpdatePayload,
   AdminResellerProductSettingUpdatePayload,
+  AdminResellerImageMutation,
   AdminResellerReasonPayload,
   AdminResellerSiteConfigPayload,
   AdminResellerSystemDomainPayload,
@@ -463,6 +464,8 @@ export const adminAPI = {
     api.post(`/admin/resellers/withdraws/${id}/pay`, {}),
   getResellerProfiles: (params?: Record<string, unknown>) =>
     api.get('/admin/resellers/profiles', { params }),
+  updateResellerLoginSecurity: (id: number, data: { required: boolean; reason: string }) => api.put(`/admin/resellers/profiles/${id}/login-security`, data),
+  resetResellerLoginSecurity: (id: number, data: { reason: string; identity_verified: boolean }) => api.post(`/admin/resellers/profiles/${id}/login-security/reset`, data),
   getResellerProfile: (id: number) =>
     api.get(`/admin/resellers/profiles/${id}`),
   updateResellerProfile: (id: number, data: AdminResellerProfileUpdatePayload) =>
@@ -497,6 +500,21 @@ export const adminAPI = {
     api.post(`/admin/resellers/site-configs/${resellerId}/reset`, {}),
   getResellerProductSettings: (params?: Record<string, unknown>) =>
     api.get('/admin/resellers/product-settings', { params }),
+  getResellerProductImages: (params?: Record<string, unknown>) =>
+    api.get('/admin/resellers/product-images', { params }),
+  getResellerProductImagesDetail: (resellerId: number, productId: number) =>
+    api.get(`/admin/resellers/product-images/${resellerId}/${productId}`),
+  updateResellerProductImages: (resellerId: number, productId: number, data: AdminResellerImageMutation) =>
+    api.put(`/admin/resellers/product-images/${resellerId}/${productId}`, data),
+  resetResellerProductDetailImage: (resellerId: number, productId: number, data: AdminResellerImageMutation) =>
+    api.put(`/admin/resellers/product-images/${resellerId}/${productId}/detail`, data),
+  uploadResellerProductImage: (resellerId: number, productId: number, file: File, revision: number, operationId: string, detail = false) => {
+    const data = new FormData()
+    data.append('file', file)
+    data.append('revision', String(revision))
+    data.append('operation_id', operationId)
+    return api.post(`/admin/resellers/product-images/${resellerId}/${productId}/${detail ? 'detail/upload' : 'upload'}`, data)
+  },
   getResellerProductSetting: (resellerId: number, productId: number) =>
     api.get(`/admin/resellers/product-settings/${resellerId}/${productId}`),
   updateResellerProductSettings: (

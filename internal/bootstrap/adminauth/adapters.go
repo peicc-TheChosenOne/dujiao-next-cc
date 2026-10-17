@@ -204,6 +204,9 @@ type adminUser2FATransportAdapter struct {
 
 func (a adminUser2FATransportAdapter) AdminResetUser2FA(operatorID, userID uint) (*userdomain.User, error) {
 	user, err := a.totp.AdminResetUser2FA(operatorID, userID)
+	if errors.Is(err, usertotpapp.ErrManaged) {
+		return nil, adminauthtransport.ErrUserTOTPManaged
+	}
 	return user, mapAdminAuthTransportError(err)
 }
 

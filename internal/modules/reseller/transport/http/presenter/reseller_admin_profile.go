@@ -15,19 +15,20 @@ type AdminResellerProfileUserResp struct {
 }
 
 type AdminResellerProfileResp struct {
-	ID                   uint                          `json:"id"`
-	UserID               uint                          `json:"user_id"`
-	Status               string                        `json:"status"`
-	ApplyReason          string                        `json:"apply_reason,omitempty"`
-	RejectReason         string                        `json:"reject_reason,omitempty"`
-	DefaultMarkupPercent string                        `json:"default_markup_percent"`
-	MaxMarkupPercent     string                        `json:"max_markup_percent"`
-	SettlementStatus     string                        `json:"settlement_status"`
-	ReviewedBy           *uint                         `json:"reviewed_by,omitempty"`
-	ReviewedAt           *time.Time                    `json:"reviewed_at,omitempty"`
-	CreatedAt            time.Time                     `json:"created_at"`
-	UpdatedAt            time.Time                     `json:"updated_at"`
-	User                 *AdminResellerProfileUserResp `json:"user,omitempty"`
+	LoginSecurity        *resellerdomain.LoginSecurityInfo `json:"login_security,omitempty"`
+	ID                   uint                              `json:"id"`
+	UserID               uint                              `json:"user_id"`
+	Status               string                            `json:"status"`
+	ApplyReason          string                            `json:"apply_reason,omitempty"`
+	RejectReason         string                            `json:"reject_reason,omitempty"`
+	DefaultMarkupPercent string                            `json:"default_markup_percent"`
+	MaxMarkupPercent     string                            `json:"max_markup_percent"`
+	SettlementStatus     string                            `json:"settlement_status"`
+	ReviewedBy           *uint                             `json:"reviewed_by,omitempty"`
+	ReviewedAt           *time.Time                        `json:"reviewed_at,omitempty"`
+	CreatedAt            time.Time                         `json:"created_at"`
+	UpdatedAt            time.Time                         `json:"updated_at"`
+	User                 *AdminResellerProfileUserResp     `json:"user,omitempty"`
 }
 
 type AdminResellerProductSummaryResp struct {
@@ -58,7 +59,9 @@ func NewAdminResellerProfileResp(profile *resellerdomain.Profile) *AdminReseller
 	if profile == nil {
 		return nil
 	}
+	profile.PopulateLoginSecurity()
 	resp := &AdminResellerProfileResp{
+		LoginSecurity:        profile.LoginSecurity,
 		ID:                   profile.ID,
 		UserID:               profile.UserID,
 		Status:               profile.Status,

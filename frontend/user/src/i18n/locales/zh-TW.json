@@ -1109,6 +1109,22 @@
         "codeRequired": "請輸入動態碼",
         "recoveryRequired": "請輸入恢復碼",
         "verifyFailed": "驗證失敗，請確認輸入是否正確"
+      },
+      "enrollment": {
+        "title": "綁定兩步驗證",
+        "subtitle": "完成綁定後即可進入分銷控制台",
+        "hint": "分銷商帳號必須綁定驗證器。請使用 1Password 或其他支援 TOTP 的驗證器掃描二維碼，也可手動輸入金鑰。若原驗證器已被平台重設，請重新綁定。",
+        "qrAlt": "驗證器綁定二維碼",
+        "confirmBind": "確認綁定",
+        "download": "下載復原碼",
+        "saved": "我已妥善保存復原碼",
+        "continue": "進入控制台",
+        "copyFailed": "複製失敗，請下載或手動保存復原碼",
+        "managed": "登入兩步驗證由平台管理。如需更換或重設驗證器，請聯絡管理員。",
+        "paused": "平台已暫停此帳號的登入兩步驗證，原綁定仍保留。",
+        "recoveryHint": "復原碼僅顯示這一次。請保存在安全位置，離開此頁面後無法再次查看。",
+        "policyRequired": "平台強制驗證",
+        "policyPaused": "平台已暫停"
       }
     },
     "telegramCallback": {

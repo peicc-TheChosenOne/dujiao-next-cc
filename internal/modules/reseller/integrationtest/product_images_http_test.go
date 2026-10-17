@@ -3,6 +3,9 @@ package integrationtest
 import (
 	"bytes"
 	"encoding/json"
+	auditlogapp "github.com/dujiao-next/internal/modules/auditlog/application"
+	resellerapp "github.com/dujiao-next/internal/modules/reseller/application"
+	adminhttp "github.com/dujiao-next/internal/modules/reseller/transport/http/admin"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -14,6 +17,88 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
+
+type imageAuditRecorder struct{ records []auditlogapp.AuthzRecord }
+
+func (a *imageAuditRecorder) Record(record auditlogapp.AuthzRecord) error {
+	a.records = append(a.records, record)
+	return nil
+}
+
+func TestAdminProductImagesHTTPReadWriteConflictAuditAndAuthentication(t *testing.T) {
+	f := newImageFixture(t)
+	audit := &imageAuditRecorder{}
+	handler := adminhttp.NewAdminProductSettingHandler(resellerapp.NewProductSettingService(f.store, nil), audit)
+	handler.SetProductImages(f.service)
+	r := gin.New()
+	group := r.Group("/admin")
+	group.Use(func(c *gin.Context) {
+		if c.GetHeader("X-Test-Admin") != "allowed" {
+			c.AbortWithStatus(http.StatusForbidden)
+			return
+		}
+		c.Set("admin_id", uint(9))
+		c.Set("username", "operator")
+	})
+	adminhttp.RegisterProductSettingRoutes(group, handler)
+	base := "/admin/resellers/product-images/" + strconv.Itoa(int(f.profile.ID)) + "/" + strconv.Itoa(int(f.product.ID))
+	request := func(method, path string, body io.Reader, contentType string, allowed bool) *httptest.ResponseRecorder {
+		t.Helper()
+		req := httptest.NewRequest(method, path, body)
+		req.Header.Set("Content-Type", contentType)
+		if allowed {
+			req.Header.Set("X-Test-Admin", "allowed")
+		}
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		return w
+	}
+	if response := request(http.MethodGet, base, nil, "", false); response.Code != http.StatusForbidden {
+		t.Fatal(response.Code)
+	}
+	file := imageFile(t, "admin.png", 0)
+	source, err := file.Open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer source.Close()
+	var body bytes.Buffer
+	w := multipart.NewWriter(&body)
+	part, err := w.CreateFormFile("file", "admin.png")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.Copy(part, source); err != nil {
+		t.Fatal(err)
+	}
+	_ = w.WriteField("revision", "0")
+	_ = w.WriteField("operation_id", uuid.NewString())
+	_ = w.Close()
+	result := request(http.MethodPost, base+"/upload", &body, w.FormDataContentType(), true)
+	if result.Code != 200 || !bytes.Contains(result.Body.Bytes(), []byte(`"image_source":"custom"`)) {
+		t.Fatal(result.Body.String())
+	}
+	if len(audit.records) != 1 || audit.records[0].OperatorAdminID != 9 || audit.records[0].Detail["reseller_id"] != f.profile.ID {
+		t.Fatalf("audit: %+v", audit.records)
+	}
+	result = request(http.MethodGet, "/admin/resellers/product-images?image_source=custom", nil, "", true)
+	if result.Code != 200 || !bytes.Contains(result.Body.Bytes(), []byte(`"total":1`)) {
+		t.Fatal(result.Body.String())
+	}
+	payload, _ := json.Marshal(map[string]interface{}{"images": []string{}, "revision": 0, "operation_id": uuid.NewString()})
+	result = request(http.MethodPut, base, bytes.NewReader(payload), "application/json", true)
+	if result.Code != http.StatusConflict {
+		t.Fatal(result.Code, result.Body.String())
+	}
+	if len(audit.records) != 1 {
+		t.Fatal("failed write was recorded as successful")
+	}
+	payload, _ = json.Marshal(map[string]interface{}{"images": []string{}, "revision": 1, "operation_id": uuid.NewString()})
+	result = request(http.MethodPut, base, bytes.NewReader(payload), "application/json", true)
+	if !bytes.Contains(result.Body.Bytes(), []byte(`"image_source":"platform"`)) || len(audit.records) != 2 {
+		t.Fatal(result.Body.String())
+	}
+}
 
 func TestProductImagesHTTPUsesAuthenticatedIdentityAndReturnsConflict(t *testing.T) {
 	f := newImageFixture(t)

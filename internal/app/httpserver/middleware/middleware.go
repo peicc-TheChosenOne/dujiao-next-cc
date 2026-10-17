@@ -357,7 +357,7 @@ func AdminRBACMiddleware(authzService *authz.Service) gin.HandlerFunc {
 }
 
 // UserJWTAuthMiddleware 用户 JWT 鉴权中间件
-func UserJWTAuthMiddleware(secretKey string, userRepo usercontract.Store) gin.HandlerFunc {
+func UserJWTAuthMiddleware(secretKey string, userRepo usercontract.Store, guards ...func(*userauthapp.UserJWTClaims) error) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if secretKey == "" {
 			msg := i18n.T(i18n.ResolveLocale(c), "error.jwt_secret_missing")
@@ -404,6 +404,14 @@ func UserJWTAuthMiddleware(secretKey string, userRepo usercontract.Store) gin.Ha
 			response.Unauthorized(c, msg)
 			c.Abort()
 			return
+		}
+
+		for _, guard := range guards {
+			if guard != nil && guard(claims) != nil {
+				response.Unauthorized(c, i18n.T(i18n.ResolveLocale(c), "error.totp_login_required"))
+				c.Abort()
+				return
+			}
 		}
 
 		if cached, hit, cacheErr := cache.GetUserAuthState(c.Request.Context(), claims.UserID); cacheErr == nil && hit && cached != nil {

@@ -582,18 +582,8 @@ func (s *Service) completeExternalLogin(user *userdomain.User, source string) (*
 	if user == nil {
 		return nil, ErrNotFound
 	}
-	if user.TOTPEnabledAt != nil {
-		challengeToken, jti, expiresAt, err := s.IssueUserChallengeTokenForSource(user.ID, false, source)
-		if err != nil {
-			return nil, err
-		}
-		return &UserLoginResult{
-			RequiresTOTP:       true,
-			User:               user,
-			ChallengeToken:     challengeToken,
-			ChallengeJTI:       jti,
-			ChallengeExpiresAt: expiresAt,
-		}, nil
+	if result, err := s.prepareSecondFactor(user, false, source); err != nil || result != nil {
+		return result, err
 	}
 
 	token, expiresAt, err := s.GenerateUserJWT(user, 0)

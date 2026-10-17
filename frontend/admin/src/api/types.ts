@@ -793,6 +793,7 @@ export interface AdminResellerProfileRef {
 }
 
 export interface AdminResellerProfile {
+  login_security?: { required: boolean; bound: boolean; binding_state: 'bound' | 'unbound' | 'reset_pending'; bound_at?: string; action: string; reason: string; admin_id: number; updated_at?: string }
   id: number
   user_id: number
   status: string
@@ -909,6 +910,31 @@ export interface AdminResellerProductSettingProduct {
   title: LocalizedText
   price_amount: string | number
   is_active: boolean
+}
+
+export interface AdminResellerProductImages {
+  product: { id: number; slug: string; title: LocalizedText }
+  reseller_id: number
+  user_id: number
+  owner_label: string
+  profile_status: string
+  can_edit: boolean
+  platform_images: string[]
+  custom_images: string[]
+  effective_images: string[]
+  image_source: 'platform' | 'custom'
+  custom_detail_image: string
+  detail_image_source: 'platform' | 'custom'
+  platform_detail_content: LocalizedText
+  revision: number
+  operation_id: string
+  updated_at: string | null
+}
+
+export interface AdminResellerImageMutation {
+  revision: number
+  operation_id: string
+  images?: string[]
 }
 
 export interface AdminResellerProductSetting {

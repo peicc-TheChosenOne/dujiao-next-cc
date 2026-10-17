@@ -762,3 +762,8 @@ func isEmailRecipientRejected(err error) bool {
 	}
 	return false
 }
+
+// SendLoginSecurityNotice contains no authenticator secret or recovery codes.
+func (s *Service) SendLoginSecurityNotice(to, action, locale string, brand mailbrand.Brand) error {
+	return s.sendTextEmail(to, i18n.T(locale, "email.login_security_subject"), i18n.Sprintf(locale, "email.login_security_body", i18n.T(locale, "email.login_security_"+action)), brand)
+}

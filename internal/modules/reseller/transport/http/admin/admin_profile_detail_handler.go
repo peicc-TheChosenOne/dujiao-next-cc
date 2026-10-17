@@ -2,6 +2,7 @@ package adminhttp
 
 import (
 	"errors"
+	"strings"
 
 	resellerdomain "github.com/dujiao-next/internal/modules/reseller/domain"
 
@@ -34,10 +35,82 @@ type OrderAdminLister interface {
 
 // AdminProfileDetailHandler 处理后台分销商运营详情聚合。
 type AdminProfileDetailHandler struct {
-	directory ProfileDetailDirectory
-	products  ProductSettingSummarizer
-	finance   AdminFinanceQueryService
-	orders    OrderAdminLister
+	security      LoginSecurityManager
+	securityAudit AuditRecorder
+	directory     ProfileDetailDirectory
+	products      ProductSettingSummarizer
+	finance       AdminFinanceQueryService
+	orders        OrderAdminLister
+}
+
+type LoginSecurityManager interface {
+	UpdateResellerLoginSecurity(adminID, userID uint, required, reset bool, reason string) error
+}
+
+func (h *AdminProfileDetailHandler) SetLoginSecurity(manager LoginSecurityManager, audit AuditRecorder) {
+	h.security = manager
+	h.securityAudit = audit
+}
+
+func (h *AdminProfileDetailHandler) UpdateLoginSecurity(c *gin.Context) {
+	h.changeLoginSecurity(c, false)
+}
+func (h *AdminProfileDetailHandler) ResetLoginSecurity(c *gin.Context) {
+	h.changeLoginSecurity(c, true)
+}
+
+func (h *AdminProfileDetailHandler) changeLoginSecurity(c *gin.Context, reset bool) {
+	var req struct {
+		Required         *bool  `json:"required"`
+		Reason           string `json:"reason" binding:"required,max=500"`
+		IdentityVerified bool   `json:"identity_verified"`
+	}
+	if c.ShouldBindJSON(&req) != nil || strings.TrimSpace(req.Reason) == "" || (!reset && req.Required == nil) || (reset && !req.IdentityVerified) {
+		ginutil.RespondError(c, response.CodeBadRequest, "error.bad_request", nil)
+		return
+	}
+	id, err := ginutil.ParseParamUint(c, "id")
+	if err != nil {
+		ginutil.RespondError(c, response.CodeBadRequest, "error.bad_request", nil)
+		return
+	}
+	adminID, ok := ginutil.GetAdminID(c)
+	if !ok {
+		return
+	}
+	profile, err := h.directory.GetProfileByID(id)
+	if err != nil {
+		ginutil.RespondError(c, response.CodeInternal, "error.internal_error", err)
+		return
+	}
+	if profile == nil {
+		ginutil.RespondError(c, response.CodeNotFound, "error.user_not_found", nil)
+		return
+	}
+	if h.security == nil {
+		ginutil.RespondError(c, response.CodeInternal, "error.internal_error", nil)
+		return
+	}
+	required := true
+	if req.Required != nil {
+		required = *req.Required
+	}
+	if reset {
+		required = true
+	}
+	err = h.security.UpdateResellerLoginSecurity(adminID, profile.UserID, required, reset, req.Reason)
+	if err != nil {
+		ginutil.RespondError(c, response.CodeBadRequest, "error.totp_security_changed", nil)
+		return
+	}
+	audit := &AdminManagementHandler{audit: h.securityAudit}
+	audit.recordAudit(c, "reseller_login_security_change", c.FullPath(), gin.H{"reseller_id": id, "user_id": profile.UserID, "before": profile.LoginSecurity, "required": required, "reset": reset, "reason": req.Reason, "client_ip": c.ClientIP()})
+	profile, err = h.directory.GetProfileByID(id)
+	if err != nil || profile == nil {
+		ginutil.RespondError(c, response.CodeInternal, "error.internal_error", nil)
+		return
+	}
+	response.Success(c, profile.LoginSecurity)
 }
 
 func NewAdminProfileDetailHandler(

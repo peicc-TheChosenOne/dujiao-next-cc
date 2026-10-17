@@ -25,6 +25,98 @@ func (r *Store) ListProductImages(resellerID uint, productIDs []uint) ([]reselle
 	return rows, err
 }
 
+// 图片管理独立查询图片配置，不依赖分销定价记录，也不生成所有店铺与商品的笛卡尔积。
+func (r *Store) ListAdminProductImages(filter resellercontract.ProductImageAdminFilter) ([]resellercontract.ProductImageAdminRow, int64, error) {
+	query := r.db.Table("products").Where("products.deleted_at IS NULL")
+	customImages := "(pi.images IS NOT NULL AND CAST(pi.images AS TEXT) NOT IN ('[]', 'null', ''))"
+	customDetail := "(pi.detail_image IS NOT NULL AND pi.detail_image <> '')"
+	if filter.Scope == "all" {
+		query = query.Joins("JOIN reseller_profiles rp ON rp.id = ? AND rp.deleted_at IS NULL", filter.ResellerID).
+			Joins("LEFT JOIN reseller_product_images pi ON pi.product_id = products.id AND pi.reseller_id = rp.id").
+			Where("products.is_active = ? AND EXISTS (SELECT 1 FROM categories c WHERE c.id = products.category_id AND c.is_active = ? AND c.deleted_at IS NULL)", true, true)
+	} else {
+		query = query.Joins("JOIN reseller_product_images pi ON pi.product_id = products.id").
+			Joins("JOIN reseller_profiles rp ON rp.id = pi.reseller_id AND rp.deleted_at IS NULL").
+			Where("(" + customImages + " OR " + customDetail + ")")
+	}
+	if filter.ResellerID > 0 {
+		query = query.Where("rp.id = ?", filter.ResellerID)
+	}
+	if filter.ProductID > 0 {
+		query = query.Where("products.id = ?", filter.ProductID)
+	}
+	if keyword := strings.TrimSpace(filter.Keyword); keyword != "" {
+		condition, count := gormutil.BuildLocalizedLikeCondition(r.db, []string{"products.slug"}, []string{"products.title_json"})
+		search := r.db.Where(condition, gormutil.RepeatLikeArgs("%"+keyword+"%", count)...)
+		if id, err := strconv.ParseUint(keyword, 10, 64); err == nil && id > 0 {
+			search = search.Or("products.id = ?", uint(id))
+		}
+		query = query.Where(search)
+	}
+	for _, source := range []struct{ value, condition string }{{filter.ImageSource, customImages}, {filter.DetailSource, customDetail}} {
+		if source.value == "custom" {
+			query = query.Where(source.condition)
+		}
+		if source.value == "platform" {
+			query = query.Where("NOT " + source.condition)
+		}
+	}
+	var total int64
+	if err := query.Session(&gorm.Session{}).Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	var scopes []struct{ ResellerID, ProductID uint }
+	if err := applyPagination(query.Session(&gorm.Session{}), filter.Page, filter.PageSize).
+		Select("rp.id AS reseller_id, products.id AS product_id").
+		Order("COALESCE(pi.updated_at, products.created_at) DESC, rp.id DESC, products.id DESC").Scan(&scopes).Error; err != nil {
+		return nil, 0, err
+	}
+	result := make([]resellercontract.ProductImageAdminRow, 0, len(scopes))
+	if len(scopes) == 0 {
+		return result, total, nil
+	}
+	profileIDs, productIDs := []uint{}, []uint{}
+	for _, scope := range scopes {
+		profileIDs = append(profileIDs, scope.ResellerID)
+		productIDs = append(productIDs, scope.ProductID)
+	}
+	var profiles []resellerdomain.Profile
+	var products []productdomain.Product
+	var configs []resellerdomain.ProductImages
+	if err := r.db.Preload("User", "deleted_at IS NULL").Where("id IN ? AND deleted_at IS NULL", profileIDs).Find(&profiles).Error; err != nil {
+		return nil, 0, err
+	}
+	if err := r.db.Preload("Category", "deleted_at IS NULL").Where("id IN ? AND deleted_at IS NULL", productIDs).Find(&products).Error; err != nil {
+		return nil, 0, err
+	}
+	if err := r.db.Where("reseller_id IN ? AND product_id IN ?", profileIDs, productIDs).Find(&configs).Error; err != nil {
+		return nil, 0, err
+	}
+	profileMap := make(map[uint]resellerdomain.Profile)
+	productMap := make(map[uint]productdomain.Product)
+	configMap := make(map[[2]uint]resellerdomain.ProductImages)
+	for _, profile := range profiles {
+		profileMap[profile.ID] = profile
+	}
+	for _, product := range products {
+		productMap[product.ID] = product
+	}
+	for _, config := range configs {
+		configMap[[2]uint{config.ResellerID, config.ProductID}] = config
+	}
+	for _, scope := range scopes {
+		profile, profileOK := profileMap[scope.ResellerID]
+		product, productOK := productMap[scope.ProductID]
+		if !profileOK || !productOK {
+			continue
+		}
+		config := configMap[[2]uint{scope.ResellerID, scope.ProductID}]
+		config.ResellerID, config.ProductID = scope.ResellerID, scope.ProductID
+		result = append(result, resellercontract.ProductImageAdminRow{Product: product, Profile: profile, Config: config})
+	}
+	return result, total, nil
+}
+
 // SaveProductImages 仅做短事务：重新校验范围并原子比较版本，不在事务中上传文件。
 func (r *Store) SaveProductImages(config resellerdomain.ProductImages, expectedRevision uint64) error {
 	return r.db.Transaction(func(tx *gorm.DB) error {

@@ -1109,6 +1109,22 @@
         "codeRequired": "Please enter the code",
         "recoveryRequired": "Please enter a recovery code",
         "verifyFailed": "Verification failed, please check your input"
+      },
+      "enrollment": {
+        "title": "Set up two-factor authentication",
+        "subtitle": "Complete setup to access your reseller console",
+        "hint": "Reseller accounts must use an authenticator. Scan the QR code with 1Password or another TOTP app, or enter the key manually. If the platform reset your authenticator, set it up again.",
+        "qrAlt": "Authenticator setup QR code",
+        "confirmBind": "Confirm setup",
+        "download": "Download recovery codes",
+        "saved": "I have safely saved my recovery codes",
+        "continue": "Open reseller console",
+        "copyFailed": "Copy failed. Download or manually save your recovery codes.",
+        "managed": "Login verification is managed by the platform. Contact an administrator to replace or reset your authenticator.",
+        "paused": "The platform paused login verification for this account. Your authenticator binding is retained.",
+        "recoveryHint": "These recovery codes are shown once. Save them safely before leaving this page.",
+        "policyRequired": "Required by platform",
+        "policyPaused": "Paused by platform"
       }
     },
     "telegramCallback": {

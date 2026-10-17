@@ -13,6 +13,7 @@ import type {
 import { Info, CircleCheck, CircleAlert } from 'lucide-vue-next'
 import IdCell from '@/components/IdCell.vue'
 import MediaPicker from '@/components/admin/MediaPicker.vue'
+import ResellerImagePreview from '@/components/admin/ResellerImagePreview.vue'
 import RichEditor from '@/components/RichEditor.vue'
 import ResellerLocaleSwitch from '@/components/admin/ResellerLocaleSwitch.vue'
 import { Button } from '@/components/ui/button'
@@ -85,6 +86,7 @@ const operatingId = ref<number | null>(null)
 const rows = ref<AdminResellerSiteConfig[]>([])
 const selectedRow = ref<AdminResellerSiteConfig | null>(null)
 const showEditor = ref(false)
+const previewImage = ref('')
 const pagination = ref({
   page: 1,
   page_size: 20,
@@ -255,7 +257,7 @@ const buildPayload = (): AdminResellerSiteConfigPayload => ({
       notice: form.nav_config.builtin.notice !== false,
       about: form.nav_config.builtin.about !== false,
     },
-    custom_items: [],
+    custom_items: selectedRow.value?.nav_config?.custom_items || [],
   },
 })
 
@@ -299,14 +301,14 @@ const changePageSize = (size: number) => {
   fetchRows(1)
 }
 
-const openEditor = async (row: AdminResellerSiteConfig) => {
+const openEditor = async (row: AdminResellerSiteConfig, tab: 'brand' | 'banner' = 'brand') => {
   operatingId.value = row.reseller_id
   try {
     const response = await adminAPI.getResellerSiteConfig(row.reseller_id)
     const latest = response.data.data as AdminResellerSiteConfig
     selectedRow.value = latest
     assignForm(normalizeConfigForForm(latest))
-    activeTab.value = 'brand'
+    activeTab.value = tab
     activeLocale.value = 'zh-CN'
     showEditor.value = true
   } catch (err: any) {
@@ -402,6 +404,7 @@ onMounted(() => {
             <TableHead class="min-w-[170px] px-6 py-3">{{ t('admin.resellerSiteConfigs.table.siteName') }}</TableHead>
             <TableHead class="min-w-[150px] px-6 py-3">{{ t('admin.resellerSiteConfigs.table.logo') }}</TableHead>
             <TableHead class="min-w-[150px] px-6 py-3">{{ t('admin.resellerSiteConfigs.table.favicon') }}</TableHead>
+            <TableHead class="min-w-[170px] px-6 py-3">{{ t('admin.resellerProductImages.bannerColumn') }}</TableHead>
             <TableHead class="min-w-[190px] px-6 py-3">{{ t('admin.resellerSiteConfigs.table.updatedAt') }}</TableHead>
             <TableHead class="min-w-[160px] px-6 py-3 text-right">{{ t('admin.resellerSiteConfigs.table.action') }}</TableHead>
           </TableRow>
@@ -409,7 +412,7 @@ onMounted(() => {
         <TableBody class="divide-y divide-border">
           <template v-if="loading">
             <TableRow v-for="n in 5" :key="n">
-              <TableCell colspan="7" class="px-6 py-4">
+              <TableCell colspan="8" class="px-6 py-4">
                 <TableSkeleton :rows="1" />
               </TableCell>
             </TableRow>
@@ -434,9 +437,18 @@ onMounted(() => {
                 <img v-if="item.favicon" :src="getImageUrl(item.favicon)" class="h-9 w-9 rounded border border-border bg-muted/30 object-contain" alt="favicon" />
                 <span v-else class="text-xs text-muted-foreground">-</span>
               </TableCell>
+              <TableCell class="px-6 py-4">
+                <div class="space-y-1">
+                  <span class="text-xs text-muted-foreground">{{ t(`admin.resellerSiteConfigs.banner.${item.banner?.mode || 'inherit'}`) }}</span>
+                  <div v-if="item.banner?.mode === 'custom'" class="flex gap-1">
+                    <button v-for="image in [...new Set([item.banner.image, item.banner.mobile_image].filter(Boolean))]" :key="image" type="button" :aria-label="t('admin.resellerProductImages.preview')" @click="previewImage = image"><img :src="getImageUrl(image)" :alt="t('admin.resellerProductImages.bannerColumn')" class="h-10 w-16 rounded border object-contain" /></button>
+                  </div>
+                </div>
+              </TableCell>
               <TableCell class="px-6 py-4 text-sm text-muted-foreground">{{ formatDate(item.updated_at) }}</TableCell>
               <TableCell class="px-6 py-4">
                 <div class="flex justify-end gap-2">
+                  <Button size="sm" variant="outline" :disabled="operatingId === item.reseller_id || !canEditResellerSiteConfig(item.profile)" @click="openEditor(item, 'banner')">{{ t('admin.resellerProductImages.bannerManage') }}</Button>
                   <Button size="sm" variant="outline" :disabled="operatingId === item.reseller_id || !canEditResellerSiteConfig(item.profile)" @click="openEditor(item)">
                     {{ t('admin.resellerSiteConfigs.actions.edit') }}
                   </Button>
@@ -448,7 +460,7 @@ onMounted(() => {
             </TableRow>
           </template>
           <TableRow v-else>
-            <TableCell colspan="7" class="px-6 py-12 text-center text-sm text-muted-foreground">
+            <TableCell colspan="8" class="px-6 py-12 text-center text-sm text-muted-foreground">
               {{ t('admin.resellerSiteConfigs.empty') }}
             </TableCell>
           </TableRow>
@@ -693,5 +705,6 @@ onMounted(() => {
         </div>
       </DialogScrollContent>
     </Dialog>
+    <ResellerImagePreview v-model="previewImage" />
   </div>
 </template>

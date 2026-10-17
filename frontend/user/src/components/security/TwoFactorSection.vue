@@ -1,15 +1,16 @@
 <template>
-  <div class="rounded-2xl border bg-card p-7 shadow-sm">
+  <div v-if="allowSelfSetup || status?.platform_managed" class="rounded-2xl border bg-card p-7 shadow-sm">
     <div class="mb-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
       <div>
         <h3 class="text-lg font-bold text-foreground">{{ t('personalCenter.security.twofa.title') }}</h3>
         <p class="mt-1 text-sm text-muted-foreground">{{ t('personalCenter.security.twofa.subtitle') }}</p>
       </div>
-      <Badge :variant="status?.enabled ? 'success' : 'neutral'" size="sm">
-        {{ status?.enabled ? t('personalCenter.security.twofa.statusEnabled') : t('personalCenter.security.twofa.statusDisabled') }}
+      <Badge :variant="(status?.platform_managed ? status.verification_required : status?.enabled) ? 'success' : 'neutral'" size="sm">
+        {{ status?.platform_managed ? t(status.verification_required ? 'auth.login.enrollment.policyRequired' : 'auth.login.enrollment.policyPaused') : status?.enabled ? t('personalCenter.security.twofa.statusEnabled') : t('personalCenter.security.twofa.statusDisabled') }}
       </Badge>
     </div>
 
+    <p v-if="status?.platform_managed" class="mb-4 text-sm text-muted-foreground">{{ t(status.verification_required ? 'auth.login.enrollment.managed' : 'auth.login.enrollment.paused') }}</p>
     <Alert v-if="alert" class="mb-4" :variant="pageAlertVariant(alert.level)" :class="pageAlertToneClass(alert.level)">
       <AlertDescription>{{ alert.message }}</AlertDescription>
     </Alert>
@@ -30,7 +31,7 @@
         <Button type="button" variant="outline" class="h-11 font-semibold" @click="openRegenerate">
           {{ t('personalCenter.security.twofa.regenerateAction') }}
         </Button>
-        <Button type="button" variant="destructive" class="h-11 font-semibold" @click="openDisable">
+        <Button v-if="!status?.platform_managed" type="button" variant="destructive" class="h-11 font-semibold" @click="openDisable">
           {{ t('personalCenter.security.twofa.disableAction') }}
         </Button>
       </div>
@@ -104,7 +105,7 @@
     </div>
 
     <!-- 未启用：显示绑定流程 -->
-    <div v-else class="space-y-4">
+    <div v-else-if="!status?.platform_managed" class="space-y-4">
       <p class="text-sm text-muted-foreground">{{ t('personalCenter.security.twofa.notEnabledHint') }}</p>
 
       <div v-if="!setupResult">
@@ -187,10 +188,13 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 
+withDefaults(defineProps<{ allowSelfSetup?: boolean }>(), { allowSelfSetup: true })
 const { t } = useI18n()
 const userAuthStore = useUserAuthStore()
 
 interface TwoFactorStatus {
+  platform_managed?: boolean
+  verification_required?: boolean
   enabled: boolean
   enabled_at?: string | null
   recovery_codes_remaining: number

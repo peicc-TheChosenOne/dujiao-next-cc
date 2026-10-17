@@ -236,6 +236,7 @@ func (h *UserGoogleHandler) respondGoogleLoginResult(c *gin.Context, result *Aut
 		h.recordLogin(c, result.User.Email, result.User.ID, constants.LoginLogStatusSuccess, constants.LoginLogPasswordOK2FAPending)
 		response.Success(c, gin.H{
 			"requires_totp":        true,
+			"requires_totp_setup":  result.RequiresTOTPSetup,
 			"challenge_token":      result.ChallengeToken,
 			"challenge_expires_at": result.ChallengeExpiresAt.Format("2006-01-02T15:04:05Z07:00"),
 		})

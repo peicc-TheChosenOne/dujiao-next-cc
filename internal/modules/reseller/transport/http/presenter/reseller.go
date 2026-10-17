@@ -46,6 +46,34 @@ func NewResellerProductImagesResp(product productdomain.Product, config reseller
 	return resp
 }
 
+type AdminResellerProductImagesResp struct {
+	ResellerProductImagesResp
+	ResellerID    uint       `json:"reseller_id"`
+	UserID        uint       `json:"user_id"`
+	OwnerLabel    string     `json:"owner_label"`
+	ProfileStatus string     `json:"profile_status"`
+	CanEdit       bool       `json:"can_edit"`
+	UpdatedAt     *time.Time `json:"updated_at"`
+}
+
+func NewAdminResellerProductImagesResp(product productdomain.Product, config resellerdomain.ProductImages, profile *resellerdomain.Profile) AdminResellerProductImagesResp {
+	resp := AdminResellerProductImagesResp{ResellerProductImagesResp: NewResellerProductImagesResp(product, config), ResellerID: config.ResellerID}
+	if !config.UpdatedAt.IsZero() {
+		resp.UpdatedAt = &config.UpdatedAt
+	}
+	if profile != nil {
+		resp.ResellerID, resp.UserID, resp.ProfileStatus = profile.ID, profile.UserID, profile.Status
+		if profile.User != nil {
+			resp.OwnerLabel = profile.User.Email
+			if resp.OwnerLabel == "" {
+				resp.OwnerLabel = profile.User.DisplayName
+			}
+		}
+		resp.CanEdit = profile.Status == resellerdomain.ProfileStatusActive && product.IsActive && product.Category.IsActive && product.Category.DeletedAt == nil
+	}
+	return resp
+}
+
 type ResellerProfileSummaryResp struct {
 	ID               uint      `json:"id"`
 	Status           string    `json:"status"`
